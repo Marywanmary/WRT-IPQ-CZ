@@ -72,6 +72,15 @@ echo "Using branch: $REPO_BRANCH" | tee -a "$FULL_LOG"
 echo "Using build directory: $BUILD_DIR" | tee -a "$FULL_LOG"
 echo "Using commit hash: $COMMIT_HASH" | tee -a "$FULL_LOG"
 
+# 解析设备名称
+if [[ $Dev =~ ^([^_]+)_([^_]+)_([^_]+)$ ]]; then
+    CHIP="${BASH_REMATCH[1]}"      # 芯片部分
+    SOURCE="${BASH_REMATCH[2]}"    # 源缩写部分
+    CONFIG="${BASH_REMATCH[3]}"     # 配置部分
+    
+    echo "Device name parsed: CHIP=$CHIP, SOURCE=$SOURCE, CONFIG=$CONFIG" | tee -a "$FULL_LOG"
+fi
+
 # 分布式构建：检查是否需要执行更新脚本
 if [ ! -f "$BASE_PATH/$BUILD_DIR/.update_completed" ]; then
     echo "Running update script..." | tee -a "$FULL_LOG"
@@ -96,11 +105,8 @@ apply_specific_config() {
     
     # 提取特定配置中的差异项
     grep -v "^#" "$specific_config" | grep -v "^$" | while read line; do
-        # 检查是否是配置项
         if [[ $line =~ ^CONFIG_ ]]; then
-            # 提取配置项名称
             config_name=$(echo "$line" | cut -d'=' -f1)
-            # 在基础配置中更新该配置项
             sed -i "s/^$config_name=.*/$line/" "$BASE_PATH/$BUILD_DIR/.config"
         fi
     done
@@ -122,13 +128,44 @@ remove_uhttpd_dependency() {
     fi
 }
 
-# 应用基础配置
+# 检查是否需要重新构建依赖
+check_rebuild_dependencies() {
+    local config_path="$BASE_PATH/$BUILD_DIR/.config"
+    local dependency_marker="$BASE_PATH/$BUILD_DIR/.dependencies_built"
+    
+    # 如果依赖标记文件不存在，则需要构建依赖
+    if [ ! -f "$dependency_marker" ]; then
+        echo "Dependencies not built yet" | tee -a "$FULL_LOG"
+        return 0
+    fi
+    
+    # 检查配置文件是否发生了变化
+    if [ -f "$config_path" ]; then
+        # 获取当前配置的哈希值
+        current_config_hash=$(md5sum "$config_path" | cut -d' ' -f1)
+        
+        # 获取上次构建时的配置哈希值
+        if [ -f "$dependency_marker.config_hash" ]; then
+            last_config_hash=$(cat "$dependency_marker.config_hash")
+            
+            # 如果配置哈希值相同，则不需要重新构建依赖
+            if [ "$current_config_hash" = "$last_config_hash" ]; then
+                echo "Configuration unchanged, skipping dependency rebuild" | tee -a "$FULL_LOG"
+                return 1
+            fi
+        fi
+        
+        # 保存当前配置的哈希值
+        echo "$current_config_hash" > "$dependency_marker.config_hash"
+    fi
+    
+    echo "Configuration changed, rebuilding dependencies" | tee -a "$FULL_LOG"
+    return 0
+}
+
+# 应用配置的顺序
 apply_base_config
-
-# 应用特定配置
 apply_specific_config
-
-# 移除uhttpd依赖
 remove_uhttpd_dependency
 
 # 切换到构建目录
@@ -165,10 +202,8 @@ if [[ -d $TARGET_DIR ]]; then
     find "$TARGET_DIR" -type f \( -name "*.bin" -o -name "*.manifest" -o -name "*efi.img.gz" -o -name "*.itb" -o -name "*.fip" -o -name "*.ubi" -o -name "*rootfs.tar.gz" -o -name ".config" -o -name "config.buildinfo" -o -name "Packages.manifest" \) -exec rm -f {} +
 fi
 
-# 分布式构建：检查是否已经构建过依赖
-if [ -f "$BASE_PATH/$BUILD_DIR/.dependencies_built" ]; then
-    echo "Dependencies already built, skipping download..." | tee -a "$FULL_LOG"
-else
+# 构建依赖（如果需要）
+if check_rebuild_dependencies; then
     # 下载编译所需的源代码包
     echo "Downloading sources..." | tee -a "$FULL_LOG"
     make download -j$(($(nproc) * 2)) 2>&1 | tee -a "$FULL_LOG"
@@ -180,6 +215,8 @@ else
     
     # 标记依赖已构建
     touch "$BASE_PATH/$BUILD_DIR/.dependencies_built"
+else
+    echo "Using existing dependencies" | tee -a "$FULL_LOG"
 fi
 
 # 开始编译固件
