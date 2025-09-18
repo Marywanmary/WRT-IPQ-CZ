@@ -38,6 +38,36 @@ if [ $PARALLEL_JOBS -gt 4 ]; then
     PARALLEL_JOBS=4
 fi
 
+# 定义检查文件是否需要更新的函数
+check_file_updated() {
+    local file_path=$1
+    local marker_file="$BUILD_DIR/tmp/$(basename "$file_path").updated"
+    
+    # 如果标记文件不存在，则需要更新
+    if [ ! -f "$marker_file" ]; then
+        return 0
+    fi
+    
+    # 获取文件的上次修改时间
+    local file_mtime=$(stat -c %Y "$file_path" 2>/dev/null || echo 0)
+    # 获取标记文件的时间
+    local marker_mtime=$(stat -c %Y "$marker_file" 2>/dev/null || echo 0)
+    
+    # 如果文件在标记文件之后被修改，则需要更新
+    if [ "$file_mtime" -gt "$marker_mtime" ]; then
+        return 0
+    fi
+    
+    return 1
+}
+
+# 定义标记文件已更新的函数
+mark_file_updated() {
+    local file_path=$1
+    local marker_file="$BUILD_DIR/tmp/$(basename "$file_path").updated"
+    touch "$marker_file"
+}
+
 # 定义克隆代码仓库的函数
 clone_repo() {
     if [[ ! -d $BUILD_DIR ]]; then
@@ -93,9 +123,9 @@ reset_feeds_conf() {
 
 # 定义更新软件源的函数
 update_feeds() {
-    # 检查是否已经更新过软件源
-    if [ -f "$BUILD_DIR/tmp/.feeds_updated" ]; then
-        echo "Feeds already updated, skipping..." >&2
+    # 检查是否需要更新软件源
+    if ! check_file_updated "$BUILD_DIR/$FEEDS_CONF"; then
+        echo "Feeds configuration unchanged, skipping update..." >&2
         return 0
     fi
     
@@ -128,12 +158,12 @@ update_feeds() {
     ./scripts/feeds update -a
     
     # 标记软件源已更新
-    touch "$BUILD_DIR/tmp/.feeds_updated"
+    mark_file_updated "$BUILD_DIR/$FEEDS_CONF"
 }
 
 # 定义移除不需要的软件包的函数
 remove_unwanted_packages() {
-    # 检查是否已经移除过不需要的软件包
+    # 检查是否需要移除不需要的软件包
     if [ -f "$BUILD_DIR/tmp/.packages_removed" ]; then
         echo "Unwanted packages already removed, skipping..." >&2
         return 0
@@ -247,7 +277,7 @@ parallel_process() {
 
 # 定义更新Go语言支持包的函数
 update_golang() {
-    # 检查是否已经更新过Go语言包
+    # 检查是否需要更新Go语言包
     if [ -f "$BUILD_DIR/tmp/.golang_updated" ]; then
         echo "Golang already updated, skipping..." >&2
         return 0
@@ -293,7 +323,7 @@ install_fullconenat() {
 
 # 定义安装所有软件源的函数
 install_feeds() {
-    # 检查是否已经安装过软件源
+    # 检查是否需要安装软件源
     if [ -f "$BUILD_DIR/tmp/.feeds_installed" ]; then
         echo "Feeds already installed, skipping..." >&2
         return 0
@@ -322,7 +352,7 @@ install_feeds() {
 
 # 定义修复默认设置的函数
 fix_default_set() {
-    # 检查是否已经修复过默认设置
+    # 检查是否需要修复默认设置
     if [ -f "$BUILD_DIR/tmp/.default_set_fixed" ]; then
         echo "Default settings already fixed, skipping..." >&2
         return 0
@@ -350,7 +380,7 @@ fix_default_set() {
 
 # 定义修复miniupnpd软件包的函数
 fix_miniupnpd() {
-    # 检查是否已经修复过miniupnpd
+    # 检查是否需要修复miniupnpd
     if [ -f "$BUILD_DIR/tmp/.miniupnpd_fixed" ]; then
         echo "Miniupnpd already fixed, skipping..." >&2
         return 0
@@ -369,7 +399,7 @@ fix_miniupnpd() {
 
 # 定义将dnsmasq替换为dnsmasq-full的函数
 change_dnsmasq2full() {
-    # 检查是否已经替换过dnsmasq
+    # 检查是否需要替换dnsmasq
     if [ -f "$BUILD_DIR/tmp/.dnsmasq_changed" ]; then
         echo "Dnsmasq already changed, skipping..." >&2
         return 0
@@ -385,7 +415,7 @@ change_dnsmasq2full() {
 
 # 定义修复依赖关系的函数
 fix_mk_def_depends() {
-    # 检查是否已经修复过依赖关系
+    # 检查是否需要修复依赖关系
     if [ -f "$BUILD_DIR/tmp/.depends_fixed" ]; then
         echo "Dependencies already fixed, skipping..." >&2
         return 0
@@ -403,7 +433,7 @@ fix_mk_def_depends() {
 
 # 定义添加WiFi默认设置的函数
 add_wifi_default_set() {
-    # 检查是否已经添加过WiFi默认设置
+    # 检查是否需要添加WiFi默认设置
     if [ -f "$BUILD_DIR/tmp/.wifi_set_added" ]; then
         echo "WiFi default settings already added, skipping..." >&2
         return 0
@@ -428,7 +458,7 @@ add_wifi_default_set() {
 
 # 定义更新默认LAN地址的函数
 update_default_lan_addr() {
-    # 检查是否已经更新过默认LAN地址
+    # 检查是否需要更新默认LAN地址
     if [ -f "$BUILD_DIR/tmp/.lan_addr_updated" ]; then
         echo "LAN address already updated, skipping..." >&2
         return 0
@@ -445,7 +475,7 @@ update_default_lan_addr() {
 
 # 定义移除NSS相关内核模块的函数
 remove_something_nss_kmod() {
-    # 检查是否已经移除过NSS相关内核模块
+    # 检查是否需要移除NSS相关内核模块
     if [ -f "$BUILD_DIR/tmp/.nss_kmod_removed" ]; then
         echo "NSS kernel modules already removed, skipping..." >&2
         return 0
@@ -486,7 +516,7 @@ remove_something_nss_kmod() {
 
 # 定义更新CPU亲和性脚本的函数
 update_affinity_script() {
-    # 检查是否已经更新过CPU亲和性脚本
+    # 检查是否需要更新CPU亲和性脚本
     if [ -f "$BUILD_DIR/tmp/.affinity_script_updated" ]; then
         echo "Affinity script already updated, skipping..." >&2
         return 0
@@ -576,7 +606,7 @@ fix_hash_value() {
 
 # 定义应用所有哈希值修正的函数
 apply_hash_fixes() {
-    # 检查是否已经应用过哈希值修正
+    # 检查是否需要应用哈希值修正
     if [ -f "$BUILD_DIR/tmp/.hash_fixes_applied" ]; then
         echo "Hash fixes already applied, skipping..." >&2
         return 0
@@ -602,7 +632,7 @@ apply_hash_fixes() {
 
 # 定义更新ath11k固件的函数
 update_ath11k_fw() {
-    # 检查是否已经更新过ath11k固件
+    # 检查是否需要更新ath11k固件
     if [ -f "$BUILD_DIR/tmp/.ath11k_fw_updated" ]; then
         echo "ATH11K firmware already updated, skipping..." >&2
         return 0
@@ -632,7 +662,7 @@ update_ath11k_fw() {
 
 # 定义修复软件包格式问题的函数
 fix_mkpkg_format_invalid() {
-    # 检查是否已经修复过软件包格式问题
+    # 检查是否需要修复软件包格式问题
     if [ -f "$BUILD_DIR/tmp/.mkpkg_format_fixed" ]; then
         echo "Package format already fixed, skipping..." >&2
         return 0
@@ -673,7 +703,7 @@ fix_mkpkg_format_invalid() {
 
 # 定义添加AX6600 LED控制应用的函数
 add_ax6600_led() {
-    # 检查是否已经添加过AX6600 LED控制应用
+    # 检查是否需要添加AX6600 LED控制应用
     if [ -f "$BUILD_DIR/tmp/.ax6600_led_added" ]; then
         echo "AX6600 LED control already added, skipping..." >&2
         return 0
@@ -706,7 +736,7 @@ add_ax6600_led() {
 
 # 定义修改CPU使用率显示方式的函数
 change_cpuusage() {
-    # 检查是否已经修改过CPU使用率显示方式
+    # 检查是否需要修改CPU使用率显示方式
     if [ -f "$BUILD_DIR/tmp/.cpuusage_changed" ]; then
         echo "CPU usage display already changed, skipping..." >&2
         return 0
@@ -718,8 +748,8 @@ change_cpuusage() {
     
     # 修改LuCI RPC脚本以使用自定义的cpuusage脚本
     if [ -f "$luci_rpc_path" ]; then
-        sed -i "s#const fd = popen('top -n1 | awk \\\'/^CPU/ {printf(\"%d%\", 100 - \$8)}\\\'')#const cpuUsageCommand = access('/sbin/cpuusage') ? '/sbin/cpuusage' : 'top -n1 | awk \\\'/^CPU/ {printf(\"%d%\", 100 - \$8)}\\\''#g" "$luci_rpc_path"
-        sed -i '/cpuUsageCommand/a \\t\t\tconst fd = popen(cpuUsageCommand);' "$luci_rpc_path"
+        sed -i "s#const fd = popen('top -n1 | awk \\\\\\'/^CPU/ {printf(\\\"%d%\\\", 100 - \\$8)}\\\\\\'')#const cpuUsageCommand = access('/sbin/cpuusage') ? '/sbin/cpuusage' : 'top -n1 | awk \\\\\\'/^CPU/ {printf(\\\"%d%\\\", 100 - \\$8)}\\\\\\''#g" "$luci_rpc_path"
+        sed -i '/cpuUsageCommand/a \\\t\\t\\tconst fd = popen(cpuUsageCommand);' "$luci_rpc_path"
     fi
     
     # 删除旧脚本（如果存在）
@@ -738,7 +768,7 @@ change_cpuusage() {
 
 # 定义更新tcping工具的函数
 update_tcping() {
-    # 检查是否已经更新过tcping工具
+    # 检查是否需要更新tcping工具
     if [ -f "$BUILD_DIR/tmp/.tcping_updated" ]; then
         echo "TCPing tool already updated, skipping..." >&2
         return 0
@@ -762,7 +792,7 @@ update_tcping() {
 
 # 定义设置自定义任务的函数
 set_custom_task() {
-    # 检查是否已经设置过自定义任务
+    # 检查是否需要设置自定义任务
     if [ -f "$BUILD_DIR/tmp/.custom_task_set" ]; then
         echo "Custom task already set, skipping..." >&2
         return 0
@@ -795,7 +825,7 @@ EOF
 
 # 定义应用Passwall相关调整的函数
 apply_passwall_tweaks() {
-    # 检查是否已经应用过Passwall相关调整
+    # 检查是否需要应用Passwall相关调整
     if [ -f "$BUILD_DIR/tmp/.passwall_tweaks_applied" ]; then
         echo "Passwall tweaks already applied, skipping..." >&2
         return 0
@@ -820,7 +850,7 @@ apply_passwall_tweaks() {
 
 # 定义安装opkg软件源配置的函数
 install_opkg_distfeeds() {
-    # 检查是否已经安装过opkg软件源配置
+    # 检查是否需要安装opkg软件源配置
     if [ -f "$BUILD_DIR/tmp/.opkg_distfeeds_installed" ]; then
         echo "OPKG distfeeds already installed, skipping..." >&2
         return 0
@@ -840,14 +870,14 @@ src/gz openwrt_telephony https://downloads.immortalwrt.org/releases/24.10-SNAPSH
 EOF
         
         # 修改Makefile以包含配置文件
-        sed -i "/define Package\/default-settings\/install/a\\
-\\t\$(INSTALL_DIR) \$(1)/etc\\n\
-\t\$(INSTALL_DATA) ./files/99-distfeeds.conf \$(1)/etc/99-distfeeds.conf\n" $emortal_def_dir/Makefile
+        sed -i "/define Package\\/default-settings\\/install/a\\\\
+\\\\t\\$(INSTALL_DIR) \\$(1)/etc\\\\n\\\
+\\t\\$(INSTALL_DATA) ./files/99-distfeeds.conf \\$(1)/etc/99-distfeeds.conf\\n" $emortal_def_dir/Makefile
         
         # 修改默认设置脚本
-        sed -i "/exit 0/i\\
-[ -f \'/etc/99-distfeeds.conf\' ] && mv \'/etc/99-distfeeds.conf\' \'/etc/opkg/distfeeds.conf\'\n\
-sed -ri \'/check_signature/s@^[^#]@#&@\' /etc/opkg.conf\n" $emortal_def_dir/files/99-default-settings
+        sed -i "/exit 0/i\\\\
+[ -f \\'/etc/99-distfeeds.conf\\' ] && mv \\'/etc/99-distfeeds.conf\\' \\'/etc/opkg/distfeeds.conf\\'\\\\n\
+sed -ri \\'/check_signature/s@^[^#]@#&@\\' /etc/opkg.conf\\n" $emortal_def_dir/files/99-default-settings
     fi
     
     # 标记opkg软件源配置已安装
@@ -856,7 +886,7 @@ sed -ri \'/check_signature/s@^[^#]@#&@\' /etc/opkg.conf\n" $emortal_def_dir/file
 
 # 定义更新NSS pbuf性能设置的函数
 update_nss_pbuf_performance() {
-    # 检查是否已经更新过NSS pbuf性能设置
+    # 检查是否需要更新NSS pbuf性能设置
     if [ -f "$BUILD_DIR/tmp/.nss_pbuf_performance_updated" ]; then
         echo "NSS pbuf performance already updated, skipping..." >&2
         return 0
@@ -874,7 +904,7 @@ update_nss_pbuf_performance() {
 
 # 定义设置构建签名的函数
 set_build_signature() {
-    # 检查是否已经设置过构建签名
+    # 检查是否需要设置构建签名
     if [ -f "$BUILD_DIR/tmp/.build_signature_set" ]; then
         echo "Build signature already set, skipping..." >&2
         return 0
@@ -882,7 +912,7 @@ set_build_signature() {
     
     local file="$BUILD_DIR/feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js"
     if [ -d "$(dirname "$file")" ] && [ -f $file ]; then
-        sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ build by ZqinKing')/g" "$file"
+        sed -i "s/(\\(luciversion || ''\\))/(\\1) + (' \\/ build by ZqinKing')/g" "$file"
     fi
     
     # 标记构建签名已设置
@@ -891,7 +921,7 @@ set_build_signature() {
 
 # 定义更新NSS诊断脚本的函数
 update_nss_diag() {
-    # 检查是否已经更新过NSS诊断脚本
+    # 检查是否需要更新NSS诊断脚本
     if [ -f "$BUILD_DIR/tmp/.nss_diag_updated" ]; then
         echo "NSS diag script already updated, skipping..." >&2
         return 0
@@ -909,7 +939,7 @@ update_nss_diag() {
 
 # 定义更新菜单位置的函数
 update_menu_location() {
-    # 检查是否已经更新过菜单位置
+    # 检查是否需要更新菜单位置
     if [ -f "$BUILD_DIR/tmp/.menu_location_updated" ]; then
         echo "Menu location already updated, skipping..." >&2
         return 0
@@ -933,7 +963,7 @@ update_menu_location() {
 
 # 定义修复coremark编译问题的函数
 fix_compile_coremark() {
-    # 检查是否已经修复过coremark编译问题
+    # 检查是否需要修复coremark编译问题
     if [ -f "$BUILD_DIR/tmp/.coremark_fixed" ]; then
         echo "Coremark already fixed, skipping..." >&2
         return 0
@@ -941,7 +971,7 @@ fix_compile_coremark() {
     
     local file="$BUILD_DIR/feeds/packages/utils/coremark/Makefile"
     if [ -d "$(dirname "$file")" ] && [ -f $file ]; then
-        sed -i 's/mkdir \$/mkdir -p \$/g' "$file"
+        sed -i 's/mkdir \\$/mkdir -p \\$/g' "$file"
     fi
     
     # 标记coremark编译问题已修复
@@ -950,7 +980,7 @@ fix_compile_coremark() {
 
 # 定义更新homeproxy的函数
 update_homeproxy() {
-    # 检查是否已经更新过homeproxy
+    # 检查是否需要更新homeproxy
     if [ -f "$BUILD_DIR/tmp/.homeproxy_updated" ]; then
         echo "Homeproxy already updated, skipping..." >&2
         return 0
@@ -976,7 +1006,7 @@ update_homeproxy() {
 
 # 定义更新dnsmasq配置的函数
 update_dnsmasq_conf() {
-    # 检查是否已经更新过dnsmasq配置
+    # 检查是否需要更新dnsmasq配置
     if [ -f "$BUILD_DIR/tmp/.dnsmasq_conf_updated" ]; then
         echo "Dnsmasq config already updated, skipping..." >&2
         return 0
@@ -993,7 +1023,7 @@ update_dnsmasq_conf() {
 
 # 定义添加系统升级时的备份信息的函数
 add_backup_info_to_sysupgrade() {
-    # 检查是否已经添加过系统升级时的备份信息
+    # 检查是否需要添加系统升级时的备份信息
     if [ -f "$BUILD_DIR/tmp/.backup_info_added" ]; then
         echo "Backup info already added, skipping..." >&2
         return 0
@@ -1015,7 +1045,7 @@ EOF
 
 # 定义更新启动顺序的函数
 update_script_priority() {
-    # 检查是否已经更新过启动顺序
+    # 检查是否需要更新启动顺序
     if [ -f "$BUILD_DIR/tmp/.script_priority_updated" ]; then
         echo "Script priority already updated, skipping..." >&2
         return 0
@@ -1045,7 +1075,7 @@ update_script_priority() {
 
 # 定义更新mosdns默认配置的函数
 update_mosdns_deconfig() {
-    # 检查是否已经更新过mosdns默认配置
+    # 检查是否需要更新mosdns默认配置
     if [ -f "$BUILD_DIR/tmp/.mosdns_deconfig_updated" ]; then
         echo "Mosdns deconfig already updated, skipping..." >&2
         return 0
@@ -1063,7 +1093,7 @@ update_mosdns_deconfig() {
 
 # 定义修复quickstart的函数
 fix_quickstart() {
-    # 检查是否已经修复过quickstart
+    # 检查是否需要修复quickstart
     if [ -f "$BUILD_DIR/tmp/.quickstart_fixed" ]; then
         echo "Quickstart already fixed, skipping..." >&2
         return 0
@@ -1087,7 +1117,7 @@ fix_quickstart() {
 
 # 定义更新oaf配置的函数
 update_oaf_deconfig() {
-    # 检查是否已经更新过oaf配置
+    # 检查是否需要更新oaf配置
     if [ -f "$BUILD_DIR/tmp/.oaf_deconfig_updated" ]; then
         echo "OAF deconfig already updated, skipping..." >&2
         return 0
@@ -1106,12 +1136,12 @@ update_oaf_deconfig() {
     fi
     
     if [ -d "${uci_def%/*}" ] && [ -f "$uci_def" ]; then
-        sed -i '/\(disable_hnat\|auto_load_engine\)/d' "$uci_def"
+        sed -i '/\\(disable_hnat\\|auto_load_engine\\)/d' "$uci_def"
         
         # 创建禁用脚本
         cat >"$disable_path" <<-EOF
 #!/bin/sh
-[ "\$(uci get appfilter.global.enable 2>/dev/null)" = "0" ] && {
+[ "\\$(uci get appfilter.global.enable 2>/dev/null)" = "0" ] && {
     /etc/init.d/appfilter disable
     /etc/init.d/appfilter stop
 }
@@ -1125,7 +1155,7 @@ EOF
 
 # 定义支持防火墙4的AdGuardHome的函数
 support_fw4_adg() {
-    # 检查是否已经支持过防火墙4的AdGuardHome
+    # 检查是否需要支持防火墙4的AdGuardHome
     if [ -f "$BUILD_DIR/tmp/.fw4_adg_supported" ]; then
         echo "FW4 ADG already supported, skipping..." >&2
         return 0
@@ -1145,7 +1175,7 @@ support_fw4_adg() {
 
 # 定义添加时间控制应用的函数
 add_timecontrol() {
-    # 检查是否已经添加过时间控制应用
+    # 检查是否需要添加时间控制应用
     if [ -f "$BUILD_DIR/tmp/.timecontrol_added" ]; then
         echo "Timecontrol already added, skipping..." >&2
         return 0
@@ -1168,7 +1198,7 @@ add_timecontrol() {
 
 # 定义添加gecoosac应用的函数
 add_gecoosac() {
-    # 检查是否已经添加过gecoosac应用
+    # 检查是否需要添加gecoosac应用
     if [ -f "$BUILD_DIR/tmp/.gecoosac_added" ]; then
         echo "Gecoosac already added, skipping..." >&2
         return 0
@@ -1191,7 +1221,7 @@ add_gecoosac() {
 
 # 定义修复easytier的函数
 fix_easytier() {
-    # 检查是否已经修复过easytier
+    # 检查是否需要修复easytier
     if [ -f "$BUILD_DIR/tmp/.easytier_fixed" ]; then
         echo "Easytier already fixed, skipping..." >&2
         return 0
@@ -1208,7 +1238,7 @@ fix_easytier() {
 
 # 定义更新geoip数据库的函数
 update_geoip() {
-    # 检查是否已经更新过geoip数据库
+    # 检查是否需要更新geoip数据库
     if [ -f "$BUILD_DIR/tmp/.geoip_updated" ]; then
         echo "Geoip already updated, skipping..." >&2
         return 0
@@ -1246,7 +1276,7 @@ update_geoip() {
 
 # 定义更新lucky工具的函数
 update_lucky() {
-    # 检查是否已经更新过lucky工具
+    # 检查是否需要更新lucky工具
     if [ -f "$BUILD_DIR/tmp/.lucky_updated" ]; then
         echo "Lucky already updated, skipping..." >&2
         return 0
@@ -1254,7 +1284,7 @@ update_lucky() {
     
     # 从补丁文件名中提取版本号
     local version
-    version=$(find "$BASE_PATH/patches" -name "lucky_*.tar.gz" -printf "%f\n" | head -n 1 | sed -n 's/^lucky_\(.*\)_Linux.*$/\1/p')
+    version=$(find "$BASE_PATH/patches" -name "lucky_*.tar.gz" -printf "%f\n" | head -n 1 | sed -n 's/^lucky_\\(.*\\)_Linux.*$/\\1/p')
     if [ -z "$version" ]; then
         echo "Warning: 未找到 lucky 补丁文件，跳过更新。" >&2
         return 1
@@ -1268,10 +1298,10 @@ update_lucky() {
     
     echo "正在更新 lucky Makefile..."
     # 使用本地补丁文件
-    local patch_line="\\t[ -f \$(TOPDIR)/../patches/lucky_${version}_Linux_\$(LUCKY_ARCH)_wanji.tar.gz ] && install -Dm644 \$(TOPDIR)/../patches/lucky_${version}_Linux_\$(LUCKY_ARCH)_wanji.tar.gz \$(PKG_BUILD_DIR)/\$(PKG_NAME)_\$(PKG_VERSION)_Linux_\$(LUCKY_ARCH).tar.gz"
+    local patch_line="\\\\t[ -f \\$(TOPDIR)/../patches/lucky_${version}_Linux_\\$(LUCKY_ARCH)_wanji.tar.gz ] && install -Dm644 \\$(TOPDIR)/../patches/lucky_${version}_Linux_\\$(LUCKY_ARCH)_wanji.tar.gz \\$(PKG_BUILD_DIR)/\\$(PKG_NAME)_\\$(PKG_VERSION)_Linux_\\$(LUCKY_ARCH).tar.gz"
     
     if grep -q "Build/Prepare" "$makefile_path"; then
-        sed -i "/Build\\/Prepare/a\\$patch_line" "$makefile_path"
+        sed -i "/Build\\\\/Prepare/a\\\\$patch_line" "$makefile_path"
         sed -i '/wget/d' "$makefile_path"
         echo "lucky Makefile 更新完成。"
     else
@@ -1284,7 +1314,7 @@ update_lucky() {
 
 # 定义修复Rust编译错误的函数
 fix_rust_compile_error() {
-    # 检查是否已经修复过Rust编译错误
+    # 检查是否需要修复Rust编译错误
     if [ -f "$BUILD_DIR/tmp/.rust_compile_error_fixed" ]; then
         echo "Rust compile error already fixed, skipping..." >&2
         return 0
@@ -1300,7 +1330,7 @@ fix_rust_compile_error() {
 
 # 定义更新smartdns的函数
 update_smartdns() {
-    # 检查是否已经更新过smartdns
+    # 检查是否需要更新smartdns
     if [ -f "$BUILD_DIR/tmp/.smartdns_updated" ]; then
         echo "Smartdns already updated, skipping..." >&2
         return 0
@@ -1319,7 +1349,7 @@ update_smartdns() {
     fi
     
     install -Dm644 "$BASE_PATH/patches/100-smartdns-optimize.patch" "$SMARTDNS_DIR/patches/100-smartdns-optimize.patch"
-    sed -i '/define Build\/Compile\/smartdns-ui/,/endef/s/CC=\$(TARGET_CC)/CC="\$(TARGET_CC_NOCACHE)"/' "$SMARTDNS_DIR/Makefile"
+    sed -i '/define Build\\/Compile\\/smartdns-ui/,/endef/s/CC=\\$(TARGET_CC)/CC="\\$(TARGET_CC_NOCACHE)"/' "$SMARTDNS_DIR/Makefile"
     
     echo "正在更新 luci-app-smartdns..."
     rm -rf "$LUCI_APP_SMARTDNS_DIR"
@@ -1334,7 +1364,7 @@ update_smartdns() {
 
 # 定义更新diskman磁盘管理工具的函数
 update_diskman() {
-    # 检查是否已经更新过diskman
+    # 检查是否需要更新diskman
     if [ -f "$BUILD_DIR/tmp/.diskman_updated" ]; then
         echo "Diskman already updated, skipping..." >&2
         return 0
@@ -1345,7 +1375,7 @@ update_diskman() {
     if [ -d "$path" ]; then
         echo "正在更新 diskman..."
         cd "$BUILD_DIR/feeds/luci/applications" || return
-        \rm -rf "luci-app-diskman"
+        \\rm -rf "luci-app-diskman"
         
         if ! git clone --filter=blob:none --no-checkout "$repo_url" diskman; then
             echo "错误：从 $repo_url 克隆 diskman 仓库失败" >&2
@@ -1359,7 +1389,7 @@ update_diskman() {
         
         mv applications/luci-app-diskman ../luci-app-diskman || return
         cd .. || return
-        \rm -rf diskman
+        \\rm -rf diskman
         cd "$BUILD_DIR"
         
         sed -i 's/fs-ntfs /fs-ntfs3 /g' "$path/Makefile"
@@ -1372,7 +1402,7 @@ update_diskman() {
 
 # 定义添加quickfile快速文件共享的函数
 add_quickfile() {
-    # 检查是否已经添加过quickfile
+    # 检查是否需要添加quickfile
     if [ -f "$BUILD_DIR/tmp/.quickfile_added" ]; then
         echo "Quickfile already added, skipping..." >&2
         return 0
@@ -1391,12 +1421,7 @@ add_quickfile() {
     
     local makefile_path="$target_dir/quickfile/Makefile"
     if [ -f "$makefile_path" ]; then
-        sed -i '/\t\$(INSTALL_BIN) \$(PKG_BUILD_DIR)\/quickfile-\$(ARCH_PACKAGES)/c\
-\tif [ "\$(ARCH_PACKAGES)" = "x86_64" ]; then \\\
-\t\t\$(INSTALL_BIN) \$(PKG_BUILD_DIR)\/quickfile-x86_64 \$(1)\/usr\/bin\/quickfile; \\\
-\telse \\\
-\t\t\$(INSTALL_BIN) \$(PKG_BUILD_DIR)\/quickfile-aarch64_generic \$(1)\/usr\/bin\/quickfile; \\\
-\tfi' "$makefile_path"
+        sed -i '/\\t\\$(INSTALL_BIN) \\$(PKG_BUILD_DIR)\\/quickfile-\\$(ARCH_PACKAGES)/c\\\n\\tif [ "\\$(ARCH_PACKAGES)" = "x86_64" ]; then \\\\\\\n\\t\\t\\$(INSTALL_BIN) \\$(PKG_BUILD_DIR)\\/quickfile-x86_64 \\$(1)\\/usr\\/bin\\/quickfile; \\\\\\\n\\telse \\\\\\\n\\t\\t\\$(INSTALL_BIN) \\$(PKG_BUILD_DIR)\\/quickfile-aarch64_generic \\$(1)\\/usr\\/bin\\/quickfile; \\\\\\\n\\tfi' "$makefile_path"
     fi
     
     # 标记quickfile已添加
@@ -1405,7 +1430,7 @@ add_quickfile() {
 
 # 定义设置Nginx默认配置的函数
 set_nginx_default_config() {
-    # 检查是否已经设置过Nginx默认配置
+    # 检查是否需要设置Nginx默认配置
     if [ -f "$BUILD_DIR/tmp/.nginx_config_set" ]; then
         echo "Nginx config already set, skipping..." >&2
         return 0
@@ -1442,9 +1467,7 @@ EOF
     local nginx_template="$BUILD_DIR/feeds/packages/net/nginx-util/files/uci.conf.template"
     if [ -f "$nginx_template" ]; then
         if ! grep -q "client_body_in_file_only clean;" "$nginx_template"; then
-            sed -i "/client_max_body_size 128M;/a\\
-\tclient_body_in_file_only clean;\\
-\tclient_body_temp_path /mnt/tmp;" "$nginx_template"
+            sed -i "/client_max_body_size 128M;/a\\\\\n\\tclient_body_in_file_only clean;\\\\\n\\tclient_body_temp_path /mnt/tmp;" "$nginx_template"
         fi
     fi
     
@@ -1454,7 +1477,7 @@ EOF
 
 # 定义更新uwsgi内存限制的函数
 update_uwsgi_limit_as() {
-    # 检查是否已经更新过uwsgi内存限制
+    # 检查是否需要更新uwsgi内存限制
     if [ -f "$BUILD_DIR/tmp/.uwsgi_limit_as_updated" ]; then
         echo "Uwsgi limit as already updated, skipping..." >&2
         return 0
@@ -1477,18 +1500,24 @@ update_uwsgi_limit_as() {
 
 # 定义移除调整过的软件包的函数
 remove_tweaked_packages() {
-    # 检查是否已经移除过调整过的软件包
+    # 检查是否需要移除调整过的软件包
     if [ -f "$BUILD_DIR/tmp/.tweaked_packages_removed" ]; then
         echo "Tweaked packages already removed, skipping..." >&2
         return 0
     fi
     
-    local target_mk="$BUILD_DIR/include/target.mk"
-    if [ -f "$target_mk" ]; then
-        if grep -q "^DEFAULT_PACKAGES += \$(DEFAULT_PACKAGES.tweak)" "$target_mk"; then
-            sed -i 's/DEFAULT_PACKAGES += $(DEFAULT_PACKAGES.tweak)/# DEFAULT_PACKAGES += $(DEFAULT_PACKAGES.tweak)/g' "$target_mk"
+    # 移除已调整过的软件包，避免重复调整
+    local tweaked_packages=(
+        "luci-app-argon-config"
+        "luci-app-argon-config-mod"
+        "luci-app-argon-config-mod-plus"
+    )
+    
+    for pkg in "${tweaked_packages[@]}"; do
+        if [[ -d ./feeds/luci/applications/$pkg ]]; then
+            \\rm -rf ./feeds/luci/applications/$pkg
         fi
-    fi
+    done
     
     # 标记调整过的软件包已移除
     touch "$BUILD_DIR/tmp/.tweaked_packages_removed"
@@ -1496,40 +1525,34 @@ remove_tweaked_packages() {
 
 # 定义更新argon主题的函数
 update_argon() {
-    # 检查是否已经更新过argon主题
+    # 检查是否需要更新argon主题
     if [ -f "$BUILD_DIR/tmp/.argon_updated" ]; then
         echo "Argon already updated, skipping..." >&2
         return 0
     fi
     
-    local repo_url="https://github.com/ZqinKing/luci-theme-argon.git"
-    local dst_theme_path="$BUILD_DIR/feeds/luci/themes/luci-theme-argon"
-    local tmp_dir
-    tmp_dir=$(mktemp -d)
+    local argon_dir="$BUILD_DIR/feeds/luci/themes/luci-theme-argon"
+    local repo_url="https://github.com/jerrykuku/luci-theme-argon.git"
     
-    echo "正在更新 argon 主题..."
-    
-    if ! git clone --depth 1 "$repo_url" "$tmp_dir"; then
-        echo "错误：从 $repo_url 克隆 argon 主题仓库失败" >&2
-        rm -rf "$tmp_dir"
-        exit 1
+    if [ -d "$argon_dir" ]; then
+        echo "正在更新 argon 主题..."
+        rm -rf "$argon_dir"
+        
+        # 克隆新版本
+        if ! git clone --depth 1 "$repo_url" "$argon_dir"; then
+            echo "错误：从 $repo_url 克隆 argon 主题仓库失败" >&2
+            exit 1
+        fi
     fi
-    
-    rm -rf "$dst_theme_path"
-    rm -rf "$tmp_dir/.git"
-    mv "$tmp_dir" "$dst_theme_path"
-    
-    echo "luci-theme-argon 更新完成"
     
     # 标记argon主题已更新
     touch "$BUILD_DIR/tmp/.argon_updated"
 }
 
-# 定义主函数，执行所有构建前的准备工作
-main() {
-    clone_repo              # 克隆代码仓库
-    clean_up                # 清理构建环境
-    reset_feeds_conf        # 重置软件源配置
-    update_feeds            # 更新软件源
-    remove_unwanted_packages # 移除不需要的软件包
-    remove_tweaked
+# 主执行流程
+clone_repo
+clean_up
+reset_feeds_conf
+update_feeds
+remove_unwanted_packages
+optimize_tasks_parallel
