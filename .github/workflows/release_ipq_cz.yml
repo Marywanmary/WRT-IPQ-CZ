@@ -107,39 +107,188 @@ jobs:
             ./base_config/
           retention-days: 1
 
-  # 构建作业
-  build:
-    name: Build ${{ matrix.model }}
+  # 构建作业 - immwrt组
+  build_immwrt:
+    name: Build immwrt ${{ matrix.model }}
     needs: build_deps
     strategy:
       matrix:
         include:
           # 先构建Ultra（最多软件包）
           - model: ipq60xx_immwrt_Ultra
-            group: immwrt
-            priority: 1
-          - model: ipq60xx_libwrt_Ultra
-            group: libwrt
             priority: 1
           # 然后构建Max（中等软件包）
           - model: ipq60xx_immwrt_Max
-            group: immwrt
-            priority: 2
-          - model: ipq60xx_libwrt_Max
-            group: libwrt
             priority: 2
           # 最后构建Pro（最少软件包）
           - model: ipq60xx_immwrt_Pro
-            group: immwrt
-            priority: 3
-          - model: ipq60xx_libwrt_Pro
-            group: libwrt
             priority: 3
         os: [ubuntu-24.04]
-      # 按组并行运行，每组最多2个
+      # 最多同时运行2个构建任务
       max-parallel: 2
-      # 按组分组
-      group: ${{ matrix.group }}
+
+    # 运行环境
+    runs-on: ${{ matrix.os }}
+    
+    # 步骤定义
+    steps:
+      # 步骤1：释放磁盘空间
+      - name: Free disk space
+        uses: sbwml/actions@free-disk
+        
+      # 步骤2：设置构建环境
+      - name: Build System Setup
+        run: |
+          # 执行官方构建环境初始化脚本
+          sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+          # 安装额外依赖包
+          sudo -E apt -yqq install dos2unix
+          sudo -E apt -yqq install libfuse-dev
+          # 清理不需要的软件包
+          sudo -E apt -yqq autoremove --purge
+          sudo -E apt -yqq autoclean
+          sudo -E apt -yqq clean
+          sudo -E systemctl daemon-reload
+          
+      # 步骤3：检出代码
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      # 步骤4：设置脚本执行权限
+      - name: Set Execute Permissions
+        run: |
+          echo "=== 设置执行权限 ==="
+          # 为所有shell脚本添加执行权限
+          find . -name "*.sh" -type f -exec sh -c 'head -n1 "$1" | grep -q "^#!/" && chmod +x "$1"' _ {} \;
+          
+      # 步骤5：设置构建日期和时区
+      - name: Set Build Date and Timezone
+        run: |
+          # 设置时区为上海（北京时间）
+          sudo -E timedatectl set-timezone "Asia/Shanghai"
+          # 生成构建日期
+          export BUILD_DATE=$(TZ=UTC-8 date +"%y.%m.%d_%H.%M.%S")
+          echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV
+          echo "使用芯片架构: ${{ env.CHIP }}"
+          
+      # 步骤6：下载依赖
+      - name: Download Dependencies
+        uses: actions/download-artifact@v4
+        with:
+          name: dependencies-${{ env.CHIP }}
+          path: ./
+          
+      # 步骤7：设置共享存储路径
+      - name: Set Shared Storage Path
+        run: |
+          echo "SHARED_STORAGE_PATH=${{ needs.build_deps.outputs.shared-storage-path }}" >> $GITHUB_ENV
+          
+      # 步骤8：设置权限
+      - name: Set Permissions
+        run: |
+          chmod +x -R ./action_build
+          chmod +x -R ./base_config
+          
+      # 步骤9：构建固件并捕获日志
+      - name: Build Firmware and Capture Logs
+        id: build
+        run: |
+          # 设置日志文件路径
+          FULL_LOG="./temp_firmware/${{ matrix.model }}/logs/build_full.log"
+          ERROR_LOG="./temp_firmware/${{ matrix.model }}/logs/build_errors.log"
+          WARNING_LOG="./temp_firmware/${{ matrix.model }}/logs/build_warnings.log"
+          
+          # 执行构建脚本（日志记录已在build.sh中处理）
+          echo "开始构建 ${{ matrix.model }}..."
+          ./scripts/build.sh ${{ matrix.model }}
+          BUILD_EXIT_CODE=$?
+          
+          # 检查日志文件是否存在
+          if [ ! -f "$FULL_LOG" ]; then
+            echo "错误: 完整日志文件不存在: $FULL_LOG"
+            echo "build_status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # 如果日志文件过大，进行压缩
+          if [ $(stat -c%s "$FULL_LOG" 2>/dev/null || echo 0) -gt 10485760 ]; then
+            echo "压缩大日志文件..."
+            gzip "$FULL_LOG"
+            FULL_LOG="${FULL_LOG}.gz"
+          fi
+          
+          # 输出构建状态
+          if [ $BUILD_EXIT_CODE -ne 0 ]; then
+            echo "::error::构建失败，退出码: $BUILD_EXIT_CODE"
+            echo "build_status=failed" >> $GITHUB_OUTPUT
+          else
+            echo "构建成功"
+            echo "build_status=success" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "构建日志已保存到:"
+          echo "- 完整日志: $FULL_LOG"
+          echo "- 错误日志: $ERROR_LOG"
+          echo "- 警告日志: $WARNING_LOG"
+          
+          # 列出日志目录内容，用于调试
+          echo "日志目录内容:"
+          ls -la "$(dirname "$FULL_LOG")"
+          
+          # 检查temp_firmware目录是否存在
+          if [ -d "./temp_firmware/${{ matrix.model }}" ]; then
+            echo "temp_firmware目录内容:"
+            ls -la ./temp_firmware/${{ matrix.model }}/
+          else
+            echo "警告: temp_firmware/${{ matrix.model }} 目录不存在"
+          fi
+          
+      # 步骤10：显示机器信息
+      - name: Machine Information
+        run: |
+          echo "=============================================="
+          lscpu | grep -E "name|Core|Thread"
+          echo "=============================================="
+          df -h
+          echo "=============================================="
+          
+      # 步骤11：上传构建产物
+      - name: Upload Firmware Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          # 产物名称
+          name: firmware-${{ matrix.model }}
+          # 产物路径
+          path: ./temp_firmware/${{ matrix.model }}/
+          # 保留天数
+          retention-days: 3
+          
+      # 步骤12：检查构建状态
+      - name: Check Build Status
+        if: steps.build.outputs.build_status == 'failed'
+        run: |
+          echo "::error::构建失败，请检查日志"
+          exit 1
+
+  # 构建作业 - libwrt组
+  build_libwrt:
+    name: Build libwrt ${{ matrix.model }}
+    needs: build_deps
+    strategy:
+      matrix:
+        include:
+          # 先构建Ultra（最多软件包）
+          - model: ipq60xx_libwrt_Ultra
+            priority: 1
+          # 然后构建Max（中等软件包）
+          - model: ipq60xx_libwrt_Max
+            priority: 2
+          # 最后构建Pro（最少软件包）
+          - model: ipq60xx_libwrt_Pro
+            priority: 3
+        os: [ubuntu-24.04]
+      # 最多同时运行2个构建任务
+      max-parallel: 2
 
     # 运行环境
     runs-on: ${{ matrix.os }}
@@ -288,7 +437,7 @@ jobs:
   release:
     name: Release Firmware
     # 依赖构建作业，即使部分构建失败也继续执行
-    needs: build
+    needs: [build_immwrt, build_libwrt]
     # 运行环境
     runs-on: ubuntu-24.04
     # 步骤定义
