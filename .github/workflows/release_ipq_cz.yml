@@ -1,5 +1,5 @@
 # 工作流名称：Release IPQ60XX
-name: Release IPQ60XX4
+name: Release IPQ60XX-CZ
 
 # 触发条件：手动触发或定时触发（北京时间周五0点 = UTC时间周四16:00）
 on:
@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       cache-key: ${{ steps.cache.outputs.cache-key }}
+      shared-storage-path: ${{ steps.pre-clone.outputs.shared-storage-path }}
     steps:
       # 步骤1：释放磁盘空间
       - name: Free disk space
@@ -63,7 +64,8 @@ jobs:
           
       # 步骤6：预克隆操作
       - name: Pre Clone
-        run: ./scripts/pre_clone_action.sh ipq60xx_immwrt_Pro
+        id: pre-clone
+        run: ./scripts/pre_clone_action.sh ipq60xx_immwrt_Ultra
         
       # 步骤7：缓存依赖项
       - name: Cache Dependencies
@@ -112,22 +114,25 @@ jobs:
     strategy:
       matrix:
         include:
-          - model: ipq60xx_immwrt_Pro
+          # 先构建Ultra（最多软件包）
+          - model: ipq60xx_immwrt_Ultra
             group: immwrt
             priority: 1
+          - model: ipq60xx_libwrt_Ultra
+            group: libwrt
+            priority: 1
+          # 然后构建Max（中等软件包）
           - model: ipq60xx_immwrt_Max
             group: immwrt
             priority: 2
-          - model: ipq60xx_immwrt_Ultra
-            group: immwrt
-            priority: 3
-          - model: ipq60xx_libwrt_Pro
-            group: libwrt
-            priority: 1
           - model: ipq60xx_libwrt_Max
             group: libwrt
             priority: 2
-          - model: ipq60xx_libwrt_Ultra
+          # 最后构建Pro（最少软件包）
+          - model: ipq60xx_immwrt_Pro
+            group: immwrt
+            priority: 3
+          - model: ipq60xx_libwrt_Pro
             group: libwrt
             priority: 3
         os: [ubuntu-24.04]
@@ -146,7 +151,7 @@ jobs:
         uses: sbwml/actions@free-disk
         
       # 步骤2：设置构建环境
-        - name: Build System Setup
+      - name: Build System Setup
         run: |
           # 执行官方构建环境初始化脚本
           sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
@@ -187,13 +192,18 @@ jobs:
           name: dependencies-${{ env.CHIP }}
           path: ./
           
-      # 步骤7：设置权限
+      # 步骤7：设置共享存储路径
+      - name: Set Shared Storage Path
+        run: |
+          echo "SHARED_STORAGE_PATH=${{ needs.build_deps.outputs.shared-storage-path }}" >> $GITHUB_ENV
+          
+      # 步骤8：设置权限
       - name: Set Permissions
         run: |
           chmod +x -R ./action_build
           chmod +x -R ./base_config
           
-      # 步骤8：构建固件并捕获日志
+      # 步骤9：构建固件并捕获日志
       - name: Build Firmware and Capture Logs
         id: build
         run: |
@@ -247,7 +257,7 @@ jobs:
             echo "警告: temp_firmware/${{ matrix.model }} 目录不存在"
           fi
           
-      # 步骤9：显示机器信息
+      # 步骤10：显示机器信息
       - name: Machine Information
         run: |
           echo "=============================================="
@@ -256,7 +266,7 @@ jobs:
           df -h
           echo "=============================================="
           
-      # 步骤10：上传构建产物
+      # 步骤11：上传构建产物
       - name: Upload Firmware Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -267,7 +277,7 @@ jobs:
           # 保留天数
           retention-days: 3
           
-      # 步骤11：检查构建状态
+      # 步骤12：检查构建状态
       - name: Check Build Status
         if: steps.build.outputs.build_status == 'failed'
         run: |
