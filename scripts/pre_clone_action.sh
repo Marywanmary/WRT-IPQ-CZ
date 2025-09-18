@@ -41,15 +41,18 @@ REPO_BRANCH=${REPO_BRANCH:-main}
 # 定义构建目录路径
 BUILD_DIR="$BASE_PATH/action_build"
 
-# 定义共享构建目录路径
-SHARED_BUILD_DIR="$BASE_PATH/shared_build"
+# 分布式构建：使用共享存储路径
+SHARED_STORAGE_PATH="/tmp/shared_build_${{ github.run_number }}"
+if [ -n "${{ secrets.SHARED_STORAGE_PATH }}" ]; then
+    SHARED_STORAGE_PATH="${{ secrets.SHARED_STORAGE_PATH }}/run_${{ github.run_number }}"
+fi
 
 # 确保共享目录存在
-mkdir -p "$SHARED_BUILD_DIR"
+mkdir -p "$SHARED_STORAGE_PATH"
 
 # 创建符号链接到共享目录
 if [ ! -L "$BUILD_DIR" ]; then
-    ln -sf "$SHARED_BUILD_DIR" "$BUILD_DIR"
+    ln -sf "$SHARED_STORAGE_PATH" "$BUILD_DIR"
 fi
 
 # 显示仓库地址和分支
@@ -57,8 +60,8 @@ echo $REPO_URL $REPO_BRANCH
 # 将仓库地址和分支信息写入标记文件
 echo "$REPO_URL/$REPO_BRANCH" >"$BASE_PATH/repo_flag"
 
-# 增量构建：检查仓库是否已存在
-if [ -d "$BUILD_DIR" ]; then
+# 分布式构建：检查是否需要克隆仓库
+if [ -f "$BUILD_DIR/.repo_cloned" ]; then
     echo "Repository already exists, updating..."
     cd "$BUILD_DIR"
     git fetch origin
@@ -68,6 +71,7 @@ if [ -d "$BUILD_DIR" ]; then
 else
     echo "Cloning repository..."
     git clone --depth 1 -b $REPO_BRANCH $REPO_URL $BUILD_DIR
+    touch "$BUILD_DIR/.repo_cloned"
 fi
 
 # 定义项目镜像源配置文件路径
@@ -91,3 +95,6 @@ if [ ! -f "$BASE_PATH/base_config/.config" ]; then
     sed -i '/CONFIG_PACKAGE_luci-app-timecontrol/d' "$BASE_PATH/base_config/.config"
     sed -i '/CONFIG_PACKAGE_luci-app-gecoosac/d' "$BASE_PATH/base_config/.config"
 fi
+
+# 输出共享存储路径供后续作业使用
+echo "SHARED_STORAGE_PATH=$SHARED_STORAGE_PATH" >> $GITHUB_OUTPUT
