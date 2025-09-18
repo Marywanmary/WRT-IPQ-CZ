@@ -86,6 +86,12 @@ reset_feeds_conf() {
 
 # 定义更新软件源的函数
 update_feeds() {
+    # 检查是否已经更新过软件源
+    if [ -f "$BUILD_DIR/tmp/.feeds_updated" ]; then
+        echo "Feeds already updated, skipping..." >&2
+        return 0
+    fi
+    
     # 删除配置文件中的注释行
     sed -i '/^#/d' "$BUILD_DIR/$FEEDS_CONF"
     
@@ -113,10 +119,19 @@ update_feeds() {
     # 更新所有软件源
     ./scripts/feeds clean
     ./scripts/feeds update -a
+    
+    # 标记软件源已更新
+    touch "$BUILD_DIR/tmp/.feeds_updated"
 }
 
 # 定义移除不需要的软件包的函数
 remove_unwanted_packages() {
+    # 检查是否已经移除过不需要的软件包
+    if [ -f "$BUILD_DIR/tmp/.packages_removed" ]; then
+        echo "Unwanted packages already removed, skipping..." >&2
+        return 0
+    fi
+    
     # 定义要移除的LuCI应用列表
     local luci_packages=(
         "luci-app-passwall" "luci-app-ddns-go" "luci-app-rclone" "luci-app-ssr-plus"
@@ -185,10 +200,19 @@ remove_unwanted_packages() {
     if [ -d "$BUILD_DIR/target/linux/qualcommax/base-files/etc/uci-defaults" ]; then
         find "$BUILD_DIR/target/linux/qualcommax/base-files/etc/uci-defaults/" -type f -name "99*.sh" -exec rm -f {} +
     fi
+    
+    # 标记不需要的软件包已移除
+    touch "$BUILD_DIR/tmp/.packages_removed"
 }
 
 # 定义更新Go语言支持包的函数
 update_golang() {
+    # 检查是否已经更新过Go语言包
+    if [ -f "$BUILD_DIR/tmp/.golang_updated" ]; then
+        echo "Golang already updated, skipping..." >&2
+        return 0
+    fi
+    
     if [[ -d ./feeds/packages/lang/golang ]]; then
         echo "正在更新 golang 软件包..."
         \rm -rf ./feeds/packages/lang/golang
@@ -199,6 +223,9 @@ update_golang() {
             exit 1
         fi
     fi
+    
+    # 标记Go语言包已更新
+    touch "$BUILD_DIR/tmp/.golang_updated"
 }
 
 # 定义安装small8源软件包的函数
@@ -226,6 +253,12 @@ install_fullconenat() {
 
 # 定义安装所有软件源的函数
 install_feeds() {
+    # 检查是否已经安装过软件源
+    if [ -f "$BUILD_DIR/tmp/.feeds_installed" ]; then
+        echo "Feeds already installed, skipping..." >&2
+        return 0
+    fi
+    
     ./scripts/feeds update -i
     
     # 遍历所有软件源目录
@@ -242,10 +275,19 @@ install_feeds() {
             fi
         fi
     done
+    
+    # 标记软件源已安装
+    touch "$BUILD_DIR/tmp/.feeds_installed"
 }
 
 # 定义修复默认设置的函数
 fix_default_set() {
+    # 检查是否已经修复过默认设置
+    if [ -f "$BUILD_DIR/tmp/.default_set_fixed" ]; then
+        echo "Default settings already fixed, skipping..." >&2
+        return 0
+    fi
+    
     # 修改默认主题
     if [ -d "$BUILD_DIR/feeds/luci/collections/" ]; then
         find "$BUILD_DIR/feeds/luci/collections/" -type f -name "Makefile" -exec sed -i "s/luci-theme-bootstrap/luci-theme-$THEME_SET/g" {} \;
@@ -261,36 +303,72 @@ fix_default_set() {
             \cp -f "$BASE_PATH/patches/tempinfo" "$BUILD_DIR/package/emortal/autocore/files/tempinfo"
         fi
     fi
+    
+    # 标记默认设置已修复
+    touch "$BUILD_DIR/tmp/.default_set_fixed"
 }
 
 # 定义修复miniupnpd软件包的函数
 fix_miniupnpd() {
+    # 检查是否已经修复过miniupnpd
+    if [ -f "$BUILD_DIR/tmp/.miniupnpd_fixed" ]; then
+        echo "Miniupnpd already fixed, skipping..." >&2
+        return 0
+    fi
+    
     local miniupnpd_dir="$BUILD_DIR/feeds/packages/net/miniupnpd"
     local patch_file="999-chanage-default-leaseduration.patch"
     
     if [ -d "$miniupnpd_dir" ] && [ -f "$BASE_PATH/patches/$patch_file" ]; then
         install -Dm644 "$BASE_PATH/patches/$patch_file" "$miniupnpd_dir/patches/$patch_file"
     fi
+    
+    # 标记miniupnpd已修复
+    touch "$BUILD_DIR/tmp/.miniupnpd_fixed"
 }
 
 # 定义将dnsmasq替换为dnsmasq-full的函数
 change_dnsmasq2full() {
+    # 检查是否已经替换过dnsmasq
+    if [ -f "$BUILD_DIR/tmp/.dnsmasq_changed" ]; then
+        echo "Dnsmasq already changed, skipping..." >&2
+        return 0
+    fi
+    
     if ! grep -q "dnsmasq-full" $BUILD_DIR/include/target.mk; then
         sed -i 's/dnsmasq/dnsmasq-full/g' ./include/target.mk
     fi
+    
+    # 标记dnsmasq已替换
+    touch "$BUILD_DIR/tmp/.dnsmasq_changed"
 }
 
 # 定义修复依赖关系的函数
 fix_mk_def_depends() {
+    # 检查是否已经修复过依赖关系
+    if [ -f "$BUILD_DIR/tmp/.depends_fixed" ]; then
+        echo "Dependencies already fixed, skipping..." >&2
+        return 0
+    fi
+    
     sed -i 's/libustream-mbedtls/libustream-openssl/g' $BUILD_DIR/include/target.mk 2>/dev/null
     
     if [ -f $BUILD_DIR/target/linux/qualcommax/Makefile ]; then
         sed -i 's/wpad-openssl/wpad-mesh-openssl/g' $BUILD_DIR/target/linux/qualcommax/Makefile
     fi
+    
+    # 标记依赖关系已修复
+    touch "$BUILD_DIR/tmp/.depends_fixed"
 }
 
 # 定义添加WiFi默认设置的函数
 add_wifi_default_set() {
+    # 检查是否已经添加过WiFi默认设置
+    if [ -f "$BUILD_DIR/tmp/.wifi_set_added" ]; then
+        echo "WiFi default settings already added, skipping..." >&2
+        return 0
+    fi
+    
     local qualcommax_uci_dir="$BUILD_DIR/target/linux/qualcommax/base-files/etc/uci-defaults"
     local filogic_uci_dir="$BUILD_DIR/target/linux/mediatek/filogic/base-files/etc/uci-defaults"
     
@@ -303,18 +381,36 @@ add_wifi_default_set() {
     if [ -d "$filogic_uci_dir" ]; then
         install -Dm755 "$BASE_PATH/patches/992_set-wifi-uci.sh" "$filogic_uci_dir/992_set-wifi-uci.sh"
     fi
+    
+    # 标记WiFi默认设置已添加
+    touch "$BUILD_DIR/tmp/.wifi_set_added"
 }
 
 # 定义更新默认LAN地址的函数
 update_default_lan_addr() {
+    # 检查是否已经更新过默认LAN地址
+    if [ -f "$BUILD_DIR/tmp/.lan_addr_updated" ]; then
+        echo "LAN address already updated, skipping..." >&2
+        return 0
+    fi
+    
     local CFG_PATH="$BUILD_DIR/package/base-files/files/bin/config_generate"
     if [ -f $CFG_PATH ]; then
         sed -i 's/192\.168\.[0-9]*\.[0-9]*/'$LAN_ADDR'/g' $CFG_PATH
     fi
+    
+    # 标记默认LAN地址已更新
+    touch "$BUILD_DIR/tmp/.lan_addr_updated"
 }
 
 # 定义移除NSS相关内核模块的函数
 remove_something_nss_kmod() {
+    # 检查是否已经移除过NSS相关内核模块
+    if [ -f "$BUILD_DIR/tmp/.nss_kmod_removed" ]; then
+        echo "NSS kernel modules already removed, skipping..." >&2
+        return 0
+    fi
+    
     local ipq_mk_path="$BUILD_DIR/target/linux/qualcommax/Makefile"
     local target_mks=("$BUILD_DIR/target/linux/qualcommax/ipq60xx/target.mk" "$BUILD_DIR/target/linux/qualcommax/ipq807x/target.mk")
     
@@ -343,10 +439,19 @@ remove_something_nss_kmod() {
         sed -i 's/automount //g' "$ipq_mk_path"
         sed -i 's/cpufreq //g' "$ipq_mk_path"
     fi
+    
+    # 标记NSS相关内核模块已移除
+    touch "$BUILD_DIR/tmp/.nss_kmod_removed"
 }
 
 # 定义更新CPU亲和性脚本的函数
 update_affinity_script() {
+    # 检查是否已经更新过CPU亲和性脚本
+    if [ -f "$BUILD_DIR/tmp/.affinity_script_updated" ]; then
+        echo "Affinity script already updated, skipping..." >&2
+        return 0
+    fi
+    
     local affinity_script_dir="$BUILD_DIR/target/linux/qualcommax"
     
     if [ -d "$affinity_script_dir" ]; then
@@ -357,6 +462,9 @@ update_affinity_script() {
         # 安装新的脚本
         install -Dm755 "$BASE_PATH/patches/smp_affinity" "$affinity_script_dir/base-files/etc/init.d/smp_affinity"
     fi
+    
+    # 标记CPU亲和性脚本已更新
+    touch "$BUILD_DIR/tmp/.affinity_script_updated"
 }
 
 # 定义修正软件包哈希值的通用函数
@@ -374,6 +482,12 @@ fix_hash_value() {
 
 # 定义应用所有哈希值修正的函数
 apply_hash_fixes() {
+    # 检查是否已经应用过哈希值修正
+    if [ -f "$BUILD_DIR/tmp/.hash_fixes_applied" ]; then
+        echo "Hash fixes already applied, skipping..." >&2
+        return 0
+    fi
+    
     # 修正smartdns软件包的哈希值
     fix_hash_value \
         "$BUILD_DIR/package/feeds/packages/smartdns/Makefile" \
@@ -387,10 +501,19 @@ apply_hash_fixes() {
         "a1c084dcc4fb7f87641d706b70168fc3c159f60f37d4b7eac6089ae68f0a18a1" \
         "ab7d303a538871ae4a70ead2e90d35e24fcc36bc20f5b6c5d963a3e283ea43b1" \
         "smartdns"    
+    
+    # 标记哈希值修正已应用
+    touch "$BUILD_DIR/tmp/.hash_fixes_applied"
 }
 
 # 定义更新ath11k固件的函数
 update_ath11k_fw() {
+    # 检查是否已经更新过ath11k固件
+    if [ -f "$BUILD_DIR/tmp/.ath11k_fw_updated" ]; then
+        echo "ATH11K firmware already updated, skipping..." >&2
+        return 0
+    fi
+    
     local makefile="$BUILD_DIR/package/firmware/ath11k-firmware/Makefile"
     local new_mk="$BASE_PATH/patches/ath11k_fw.mk"
     local url="https://raw.githubusercontent.com/VIKINGYFY/immortalwrt/refs/heads/main/package/firmware/ath11k-firmware/Makefile"
@@ -408,10 +531,19 @@ update_ath11k_fw() {
         fi
         mv -f "$new_mk" "$makefile"
     fi
+    
+    # 标记ath11k固件已更新
+    touch "$BUILD_DIR/tmp/.ath11k_fw_updated"
 }
 
 # 定义修复软件包格式问题的函数
 fix_mkpkg_format_invalid() {
+    # 检查是否已经修复过软件包格式问题
+    if [ -f "$BUILD_DIR/tmp/.mkpkg_format_fixed" ]; then
+        echo "Package format already fixed, skipping..." >&2
+        return 0
+    fi
+    
     if [[ $BUILD_DIR =~ "imm-nss" ]]; then
         # 修复v2ray-geodata的Makefile
         if [ -f $BUILD_DIR/feeds/small8/v2ray-geodata/Makefile ]; then
@@ -440,10 +572,19 @@ fix_mkpkg_format_invalid() {
             sed -i 's/PKG_RELEASE:=$/PKG_RELEASE:=1/g' $BUILD_DIR/feeds/small8/luci-app-store/Makefile
         fi
     fi
+    
+    # 标记软件包格式问题已修复
+    touch "$BUILD_DIR/tmp/.mkpkg_format_fixed"
 }
 
 # 定义添加AX6600 LED控制应用的函数
 add_ax6600_led() {
+    # 检查是否已经添加过AX6600 LED控制应用
+    if [ -f "$BUILD_DIR/tmp/.ax6600_led_added" ]; then
+        echo "AX6600 LED control already added, skipping..." >&2
+        return 0
+    fi
+    
     local athena_led_dir="$BUILD_DIR/package/emortal/luci-app-athena-led"
     local repo_url="https://github.com/NONGFAH/luci-app-athena-led.git"
     
@@ -464,10 +605,19 @@ add_ax6600_led() {
         echo "错误：克隆操作后未找到目录 $athena_led_dir" >&2
         exit 1
     fi
+    
+    # 标记AX6600 LED控制应用已添加
+    touch "$BUILD_DIR/tmp/.ax6600_led_added"
 }
 
 # 定义修改CPU使用率显示方式的函数
 change_cpuusage() {
+    # 检查是否已经修改过CPU使用率显示方式
+    if [ -f "$BUILD_DIR/tmp/.cpuusage_changed" ]; then
+        echo "CPU usage display already changed, skipping..." >&2
+        return 0
+    fi
+    
     local luci_rpc_path="$BUILD_DIR/feeds/luci/modules/luci-base/root/usr/share/rpcd/ucode/luci"
     local qualcommax_sbin_dir="$BUILD_DIR/target/linux/qualcommax/base-files/sbin"
     local filogic_sbin_dir="$BUILD_DIR/target/linux/mediatek/filogic/base-files/sbin"
@@ -487,10 +637,19 @@ change_cpuusage() {
     # 安装平台特定的cpuusage脚本
     install -Dm755 "$BASE_PATH/patches/cpuusage" "$qualcommax_sbin_dir/cpuusage"
     install -Dm755 "$BASE_PATH/patches/hnatusage" "$filogic_sbin_dir/cpuusage"
+    
+    # 标记CPU使用率显示方式已修改
+    touch "$BUILD_DIR/tmp/.cpuusage_changed"
 }
 
 # 定义更新tcping工具的函数
 update_tcping() {
+    # 检查是否已经更新过tcping工具
+    if [ -f "$BUILD_DIR/tmp/.tcping_updated" ]; then
+        echo "TCPing tool already updated, skipping..." >&2
+        return 0
+    fi
+    
     local tcping_path="$BUILD_DIR/feeds/small8/tcping/Makefile"
     local url="https://raw.githubusercontent.com/xiaorouji/openwrt-passwall-packages/refs/heads/main/tcping/Makefile"
     
@@ -502,10 +661,19 @@ update_tcping() {
             exit 1
         fi
     fi
+    
+    # 标记tcping工具已更新
+    touch "$BUILD_DIR/tmp/.tcping_updated"
 }
 
 # 定义设置自定义任务的函数
 set_custom_task() {
+    # 检查是否已经设置过自定义任务
+    if [ -f "$BUILD_DIR/tmp/.custom_task_set" ]; then
+        echo "Custom task already set, skipping..." >&2
+        return 0
+    fi
+    
     local sh_dir="$BUILD_DIR/package/base-files/files/etc/init.d"
     # 创建自定义任务脚本
     cat <<'EOF' >"$sh_dir/custom_task"
@@ -526,10 +694,19 @@ boot() {
 }
 EOF
     chmod +x "$sh_dir/custom_task"
+    
+    # 标记自定义任务已设置
+    touch "$BUILD_DIR/tmp/.custom_task_set"
 }
 
 # 定义应用Passwall相关调整的函数
 apply_passwall_tweaks() {
+    # 检查是否已经应用过Passwall相关调整
+    if [ -f "$BUILD_DIR/tmp/.passwall_tweaks_applied" ]; then
+        echo "Passwall tweaks already applied, skipping..." >&2
+        return 0
+    fi
+    
     # 清理 Passwall 的 chnlist 规则文件
     local chnlist_path="$BUILD_DIR/feeds/small8/luci-app-passwall/root/usr/share/passwall/rules/chnlist"
     if [ -f "$chnlist_path" ]; then
@@ -542,10 +719,19 @@ apply_passwall_tweaks() {
         sed -i 's/maxRTT = "1s"/maxRTT = "2s"/g' "$xray_util_path"
         sed -i 's/sampling = 3/sampling = 5/g' "$xray_util_path"
     fi
+    
+    # 标记Passwall相关调整已应用
+    touch "$BUILD_DIR/tmp/.passwall_tweaks_applied"
 }
 
 # 定义安装opkg软件源配置的函数
 install_opkg_distfeeds() {
+    # 检查是否已经安装过opkg软件源配置
+    if [ -f "$BUILD_DIR/tmp/.opkg_distfeeds_installed" ]; then
+        echo "OPKG distfeeds already installed, skipping..." >&2
+        return 0
+    fi
+    
     local emortal_def_dir="$BUILD_DIR/package/emortal/default-settings"
     local distfeeds_conf="$emortal_def_dir/files/99-distfeeds.conf"
     
@@ -569,36 +755,72 @@ EOF
 [ -f \'/etc/99-distfeeds.conf\' ] && mv \'/etc/99-distfeeds.conf\' \'/etc/opkg/distfeeds.conf\'\n\
 sed -ri \'/check_signature/s@^[^#]@#&@\' /etc/opkg.conf\n" $emortal_def_dir/files/99-default-settings
     fi
+    
+    # 标记opkg软件源配置已安装
+    touch "$BUILD_DIR/tmp/.opkg_distfeeds_installed"
 }
 
 # 定义更新NSS pbuf性能设置的函数
 update_nss_pbuf_performance() {
+    # 检查是否已经更新过NSS pbuf性能设置
+    if [ -f "$BUILD_DIR/tmp/.nss_pbuf_performance_updated" ]; then
+        echo "NSS pbuf performance already updated, skipping..." >&2
+        return 0
+    fi
+    
     local pbuf_path="$BUILD_DIR/package/kernel/mac80211/files/pbuf.uci"
     if [ -d "$(dirname "$pbuf_path")" ] && [ -f $pbuf_path ]; then
         sed -i "s/auto_scale '1'/auto_scale 'off'/g" $pbuf_path
         sed -i "s/scaling_governor 'performance'/scaling_governor 'schedutil'/g" $pbuf_path
     fi
+    
+    # 标记NSS pbuf性能设置已更新
+    touch "$BUILD_DIR/tmp/.nss_pbuf_performance_updated"
 }
 
 # 定义设置构建签名的函数
 set_build_signature() {
+    # 检查是否已经设置过构建签名
+    if [ -f "$BUILD_DIR/tmp/.build_signature_set" ]; then
+        echo "Build signature already set, skipping..." >&2
+        return 0
+    fi
+    
     local file="$BUILD_DIR/feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js"
     if [ -d "$(dirname "$file")" ] && [ -f $file ]; then
         sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ build by ZqinKing')/g" "$file"
     fi
+    
+    # 标记构建签名已设置
+    touch "$BUILD_DIR/tmp/.build_signature_set"
 }
 
 # 定义更新NSS诊断脚本的函数
 update_nss_diag() {
+    # 检查是否已经更新过NSS诊断脚本
+    if [ -f "$BUILD_DIR/tmp/.nss_diag_updated" ]; then
+        echo "NSS diag script already updated, skipping..." >&2
+        return 0
+    fi
+    
     local file="$BUILD_DIR/package/kernel/mac80211/files/nss_diag.sh"
     if [ -d "$(dirname "$file")" ] && [ -f $file ]; then
         \rm -f "$file"
         install -Dm755 "$BASE_PATH/patches/nss_diag.sh" "$file"
     fi
+    
+    # 标记NSS诊断脚本已更新
+    touch "$BUILD_DIR/tmp/.nss_diag_updated"
 }
 
 # 定义更新菜单位置的函数
 update_menu_location() {
+    # 检查是否已经更新过菜单位置
+    if [ -f "$BUILD_DIR/tmp/.menu_location_updated" ]; then
+        echo "Menu location already updated, skipping..." >&2
+        return 0
+    fi
+    
     # 修改samba4的菜单位置
     local samba4_path="$BUILD_DIR/feeds/luci/applications/luci-app-samba4/root/usr/share/luci/menu.d/luci-app-samba4.json"
     if [ -d "$(dirname "$samba4_path")" ] && [ -f "$samba4_path" ]; then
@@ -610,18 +832,36 @@ update_menu_location() {
     if [ -d "$(dirname "$tailscale_path")" ] && [ -f "$tailscale_path" ]; then
         sed -i 's/services/vpn/g' "$tailscale_path"
     fi
+    
+    # 标记菜单位置已更新
+    touch "$BUILD_DIR/tmp/.menu_location_updated"
 }
 
 # 定义修复coremark编译问题的函数
 fix_compile_coremark() {
+    # 检查是否已经修复过coremark编译问题
+    if [ -f "$BUILD_DIR/tmp/.coremark_fixed" ]; then
+        echo "Coremark already fixed, skipping..." >&2
+        return 0
+    fi
+    
     local file="$BUILD_DIR/feeds/packages/utils/coremark/Makefile"
     if [ -d "$(dirname "$file")" ] && [ -f $file ]; then
         sed -i 's/mkdir \$/mkdir -p \$/g' "$file"
     fi
+    
+    # 标记coremark编译问题已修复
+    touch "$BUILD_DIR/tmp/.coremark_fixed"
 }
 
 # 定义更新homeproxy的函数
 update_homeproxy() {
+    # 检查是否已经更新过homeproxy
+    if [ -f "$BUILD_DIR/tmp/.homeproxy_updated" ]; then
+        echo "Homeproxy already updated, skipping..." >&2
+        return 0
+    fi
+    
     local repo_url="https://github.com/immortalwrt/homeproxy.git"
     local target_dir="$BUILD_DIR/feeds/small8/luci-app-homeproxy"
     
@@ -635,14 +875,26 @@ update_homeproxy() {
             exit 1
         fi
     fi
+    
+    # 标记homeproxy已更新
+    touch "$BUILD_DIR/tmp/.homeproxy_updated"
 }
 
 # 定义更新dnsmasq配置的函数
 update_dnsmasq_conf() {
+    # 检查是否已经更新过dnsmasq配置
+    if [ -f "$BUILD_DIR/tmp/.dnsmasq_conf_updated" ]; then
+        echo "Dnsmasq config already updated, skipping..." >&2
+        return 0
+    fi
+    
     local file="$BUILD_DIR/package/network/services/dnsmasq/files/dhcp.conf"
     if [ -d "$(dirname "$file")" ] && [ -f $file ]; then
         sed -i '/dns_redirect/d' "$file"
     fi
+    
+    # 标记dnsmasq配置已更新
+    touch "$BUILD_DIR/tmp/.dnsmasq_conf_updated"
 }
 
 # 定义更新软件包版本的通用函数
@@ -726,6 +978,12 @@ update_package() {
 
 # 定义添加系统升级时的备份信息的函数
 add_backup_info_to_sysupgrade() {
+    # 检查是否已经添加过系统升级时的备份信息
+    if [ -f "$BUILD_DIR/tmp/.backup_info_added" ]; then
+        echo "Backup info already added, skipping..." >&2
+        return 0
+    fi
+    
     local conf_path="$BUILD_DIR/package/base-files/files/etc/sysupgrade.conf"
     
     if [ -f "$conf_path" ]; then
@@ -735,10 +993,19 @@ add_backup_info_to_sysupgrade() {
 /etc/lucky/
 EOF
     fi
+    
+    # 标记系统升级时的备份信息已添加
+    touch "$BUILD_DIR/tmp/.backup_info_added"
 }
 
 # 定义更新启动顺序的函数
 update_script_priority() {
+    # 检查是否已经更新过启动顺序
+    if [ -f "$BUILD_DIR/tmp/.script_priority_updated" ]; then
+        echo "Script priority already updated, skipping..." >&2
+        return 0
+    fi
+    
     # 更新qca-nss驱动的启动顺序
     local qca_drv_path="$BUILD_DIR/package/feeds/nss_packages/qca-nss-drv/files/qca-nss-drv.init"
     if [ -d "${qca_drv_path%/*}" ] && [ -f "$qca_drv_path" ]; then
@@ -756,19 +1023,37 @@ update_script_priority() {
     if [ -d "${mosdns_path%/*}" ] && [ -f "$mosdns_path" ]; then
         sed -i 's/START=.*/START=94/g' "$mosdns_path"
     fi
+    
+    # 标记启动顺序已更新
+    touch "$BUILD_DIR/tmp/.script_priority_updated"
 }
 
 # 定义更新mosdns默认配置的函数
 update_mosdns_deconfig() {
+    # 检查是否已经更新过mosdns默认配置
+    if [ -f "$BUILD_DIR/tmp/.mosdns_deconfig_updated" ]; then
+        echo "Mosdns deconfig already updated, skipping..." >&2
+        return 0
+    fi
+    
     local mosdns_conf="$BUILD_DIR/feeds/small8/luci-app-mosdns/root/etc/config/mosdns"
     if [ -d "${mosdns_conf%/*}" ] && [ -f "$mosdns_conf" ]; then
         sed -i 's/8000/300/g' "$mosdns_conf"
         sed -i 's/5335/5336/g' "$mosdns_conf"
     fi
+    
+    # 标记mosdns默认配置已更新
+    touch "$BUILD_DIR/tmp/.mosdns_deconfig_updated"
 }
 
 # 定义修复quickstart的函数
 fix_quickstart() {
+    # 检查是否已经修复过quickstart
+    if [ -f "$BUILD_DIR/tmp/.quickstart_fixed" ]; then
+        echo "Quickstart already fixed, skipping..." >&2
+        return 0
+    fi
+    
     local file_path="$BUILD_DIR/feeds/small8/luci-app-quickstart/luasrc/controller/istore_backend.lua"
     local url="https://gist.githubusercontent.com/puteulanus/1c180fae6bccd25e57eb6d30b7aa28aa/raw/istore_backend.lua"
     
@@ -780,10 +1065,19 @@ fix_quickstart() {
             exit 1
         fi
     fi
+    
+    # 标记quickstart已修复
+    touch "$BUILD_DIR/tmp/.quickstart_fixed"
 }
 
 # 定义更新oaf配置的函数
 update_oaf_deconfig() {
+    # 检查是否已经更新过oaf配置
+    if [ -f "$BUILD_DIR/tmp/.oaf_deconfig_updated" ]; then
+        echo "OAF deconfig already updated, skipping..." >&2
+        return 0
+    fi
+    
     local conf_path="$BUILD_DIR/feeds/small8/open-app-filter/files/appfilter.config"
     local uci_def="$BUILD_DIR/feeds/small8/luci-app-oaf/root/etc/uci-defaults/94_feature_3.0"
     local disable_path="$BUILD_DIR/feeds/small8/luci-app-oaf/root/etc/uci-defaults/99_disable_oaf"
@@ -809,10 +1103,19 @@ update_oaf_deconfig() {
 EOF
         chmod +x "$disable_path"
     fi
+    
+    # 标记oaf配置已更新
+    touch "$BUILD_DIR/tmp/.oaf_deconfig_updated"
 }
 
 # 定义支持防火墙4的AdGuardHome的函数
 support_fw4_adg() {
+    # 检查是否已经支持过防火墙4的AdGuardHome
+    if [ -f "$BUILD_DIR/tmp/.fw4_adg_supported" ]; then
+        echo "FW4 ADG already supported, skipping..." >&2
+        return 0
+    fi
+    
     local src_path="$BASE_PATH/patches/AdGuardHome"
     local dst_path="$BUILD_DIR/feeds/small8/luci-app-adguardhome/root/etc/init.d/AdGuardHome"
     
@@ -820,10 +1123,19 @@ support_fw4_adg() {
         install -Dm 755 "$src_path" "$dst_path"
         echo "已更新AdGuardHome启动脚本"
     fi
+    
+    # 标记防火墙4的AdGuardHome已支持
+    touch "$BUILD_DIR/tmp/.fw4_adg_supported"
 }
 
 # 定义添加时间控制应用的函数
 add_timecontrol() {
+    # 检查是否已经添加过时间控制应用
+    if [ -f "$BUILD_DIR/tmp/.timecontrol_added" ]; then
+        echo "Timecontrol already added, skipping..." >&2
+        return 0
+    fi
+    
     local timecontrol_dir="$BUILD_DIR/package/luci-app-timecontrol"
     local repo_url="https://github.com/sirpdboy/luci-app-timecontrol.git"
     
@@ -834,10 +1146,19 @@ add_timecontrol() {
         echo "错误：从 $repo_url 克隆 luci-app-timecontrol 仓库失败" >&2
         exit 1
     fi
+    
+    # 标记时间控制应用已添加
+    touch "$BUILD_DIR/tmp/.timecontrol_added"
 }
 
 # 定义添加gecoosac应用的函数
 add_gecoosac() {
+    # 检查是否已经添加过gecoosac应用
+    if [ -f "$BUILD_DIR/tmp/.gecoosac_added" ]; then
+        echo "Gecoosac already added, skipping..." >&2
+        return 0
+    fi
+    
     local gecoosac_dir="$BUILD_DIR/package/openwrt-gecoosac"
     local repo_url="https://github.com/lwb1978/openwrt-gecoosac.git"
     
@@ -848,18 +1169,36 @@ add_gecoosac() {
         echo "错误：从 $repo_url 克隆 openwrt-gecoosac 仓库失败" >&2
         exit 1
     fi
+    
+    # 标记gecoosac应用已添加
+    touch "$BUILD_DIR/tmp/.gecoosac_added"
 }
 
 # 定义修复easytier的函数
 fix_easytier() {
+    # 检查是否已经修复过easytier
+    if [ -f "$BUILD_DIR/tmp/.easytier_fixed" ]; then
+        echo "Easytier already fixed, skipping..." >&2
+        return 0
+    fi
+    
     local easytier_path="$BUILD_DIR/feeds/small8/luci-app-easytier/luasrc/model/cbi/easytier.lua"
     if [ -d "${easytier_path%/*}" ] && [ -f "$easytier_path" ]; then
         sed -i 's/util/xml/g' "$easytier_path"
     fi
+    
+    # 标记easytier已修复
+    touch "$BUILD_DIR/tmp/.easytier_fixed"
 }
 
 # 定义更新geoip数据库的函数
 update_geoip() {
+    # 检查是否已经更新过geoip数据库
+    if [ -f "$BUILD_DIR/tmp/.geoip_updated" ]; then
+        echo "Geoip already updated, skipping..." >&2
+        return 0
+    fi
+    
     local geodata_path="$BUILD_DIR/feeds/small8/v2ray-geodata/Makefile"
     if [ -d "${geodata_path%/*}" ] && [ -f "$geodata_path" ]; then
         local GEOIP_VER=$(awk -F"=" '/GEOIP_VER:=/ {print $NF}' $geodata_path | grep -oE "[0-9]{1,}")
@@ -885,10 +1224,19 @@ update_geoip() {
             fi
         fi
     fi
+    
+    # 标记geoip数据库已更新
+    touch "$BUILD_DIR/tmp/.geoip_updated"
 }
 
 # 定义更新lucky工具的函数
 update_lucky() {
+    # 检查是否已经更新过lucky工具
+    if [ -f "$BUILD_DIR/tmp/.lucky_updated" ]; then
+        echo "Lucky already updated, skipping..." >&2
+        return 0
+    fi
+    
     # 从补丁文件名中提取版本号
     local version
     version=$(find "$BASE_PATH/patches" -name "lucky_*.tar.gz" -printf "%f\n" | head -n 1 | sed -n 's/^lucky_\(.*\)_Linux.*$/\1/p')
@@ -914,17 +1262,35 @@ update_lucky() {
     else
         echo "Warning: lucky Makefile 中未找到 'Build/Prepare'。跳过。" >&2
     fi
+    
+    # 标记lucky工具已更新
+    touch "$BUILD_DIR/tmp/.lucky_updated"
 }
 
 # 定义修复Rust编译错误的函数
 fix_rust_compile_error() {
+    # 检查是否已经修复过Rust编译错误
+    if [ -f "$BUILD_DIR/tmp/.rust_compile_error_fixed" ]; then
+        echo "Rust compile error already fixed, skipping..." >&2
+        return 0
+    fi
+    
     if [ -f "$BUILD_DIR/feeds/packages/lang/rust/Makefile" ]; then
         sed -i 's/download-ci-llvm=true/download-ci-llvm=false/g' "$BUILD_DIR/feeds/packages/lang/rust/Makefile"
     fi
+    
+    # 标记Rust编译错误已修复
+    touch "$BUILD_DIR/tmp/.rust_compile_error_fixed"
 }
 
 # 定义更新smartdns的函数
 update_smartdns() {
+    # 检查是否已经更新过smartdns
+    if [ -f "$BUILD_DIR/tmp/.smartdns_updated" ]; then
+        echo "Smartdns already updated, skipping..." >&2
+        return 0
+    fi
+    
     local SMARTDNS_REPO="https://github.com/pymumu/openwrt-smartdns.git"
     local SMARTDNS_DIR="$BUILD_DIR/feeds/packages/net/smartdns"
     local LUCI_APP_SMARTDNS_REPO="https://github.com/pymumu/luci-app-smartdns.git"
@@ -946,10 +1312,19 @@ update_smartdns() {
         echo "错误：从 $LUCI_APP_SMARTDNS_REPO 克隆 luci-app-smartdns 仓库失败" >&2
         exit 1
     fi
+    
+    # 标记smartdns已更新
+    touch "$BUILD_DIR/tmp/.smartdns_updated"
 }
 
 # 定义更新diskman磁盘管理工具的函数
 update_diskman() {
+    # 检查是否已经更新过diskman
+    if [ -f "$BUILD_DIR/tmp/.diskman_updated" ]; then
+        echo "Diskman already updated, skipping..." >&2
+        return 0
+    fi
+    
     local path="$BUILD_DIR/feeds/luci/applications/luci-app-diskman"
     local repo_url="https://github.com/lisaac/luci-app-diskman.git"
     if [ -d "$path" ]; then
@@ -975,10 +1350,19 @@ update_diskman() {
         sed -i 's/fs-ntfs /fs-ntfs3 /g' "$path/Makefile"
         sed -i '/ntfs-3g-utils /d' "$path/Makefile"
     fi
+    
+    # 标记diskman已更新
+    touch "$BUILD_DIR/tmp/.diskman_updated"
 }
 
 # 定义添加quickfile快速文件共享的函数
 add_quickfile() {
+    # 检查是否已经添加过quickfile
+    if [ -f "$BUILD_DIR/tmp/.quickfile_added" ]; then
+        echo "Quickfile already added, skipping..." >&2
+        return 0
+    fi
+    
     local repo_url="https://github.com/sbwml/luci-app-quickfile.git"
     local target_dir="$BUILD_DIR/package/emortal/quickfile"
     if [ -d "$target_dir" ]; then
@@ -999,10 +1383,19 @@ add_quickfile() {
 \t\t\$(INSTALL_BIN) \$(PKG_BUILD_DIR)\/quickfile-aarch64_generic \$(1)\/usr\/bin\/quickfile; \\\
 \tfi' "$makefile_path"
     fi
+    
+    # 标记quickfile已添加
+    touch "$BUILD_DIR/tmp/.quickfile_added"
 }
 
 # 定义设置Nginx默认配置的函数
 set_nginx_default_config() {
+    # 检查是否已经设置过Nginx默认配置
+    if [ -f "$BUILD_DIR/tmp/.nginx_config_set" ]; then
+        echo "Nginx config already set, skipping..." >&2
+        return 0
+    fi
+    
     local nginx_config_path="$BUILD_DIR/feeds/packages/net/nginx-util/files/nginx.config"
     if [ -f "$nginx_config_path" ]; then
         cat > "$nginx_config_path" <<EOF
@@ -1039,10 +1432,19 @@ EOF
 \tclient_body_temp_path /mnt/tmp;" "$nginx_template"
         fi
     fi
+    
+    # 标记Nginx默认配置已设置
+    touch "$BUILD_DIR/tmp/.nginx_config_set"
 }
 
 # 定义更新uwsgi内存限制的函数
 update_uwsgi_limit_as() {
+    # 检查是否已经更新过uwsgi内存限制
+    if [ -f "$BUILD_DIR/tmp/.uwsgi_limit_as_updated" ]; then
+        echo "Uwsgi limit as already updated, skipping..." >&2
+        return 0
+    fi
+    
     local cgi_io_ini="$BUILD_DIR/feeds/packages/net/uwsgi/files-luci-support/luci-cgi_io.ini"
     local webui_ini="$BUILD_DIR/feeds/packages/net/uwsgi/files-luci-support/luci-webui.ini"
     
@@ -1053,20 +1455,38 @@ update_uwsgi_limit_as() {
     if [ -f "$webui_ini" ]; then
         sed -i 's/^limit-as = .*/limit-as = 8192/g' "$webui_ini"
     fi
+    
+    # 标记uwsgi内存限制已更新
+    touch "$BUILD_DIR/tmp/.uwsgi_limit_as_updated"
 }
 
 # 定义移除调整过的软件包的函数
 remove_tweaked_packages() {
+    # 检查是否已经移除过调整过的软件包
+    if [ -f "$BUILD_DIR/tmp/.tweaked_packages_removed" ]; then
+        echo "Tweaked packages already removed, skipping..." >&2
+        return 0
+    fi
+    
     local target_mk="$BUILD_DIR/include/target.mk"
     if [ -f "$target_mk" ]; then
         if grep -q "^DEFAULT_PACKAGES += \$(DEFAULT_PACKAGES.tweak)" "$target_mk"; then
             sed -i 's/DEFAULT_PACKAGES += $(DEFAULT_PACKAGES.tweak)/# DEFAULT_PACKAGES += $(DEFAULT_PACKAGES.tweak)/g' "$target_mk"
         fi
     fi
+    
+    # 标记调整过的软件包已移除
+    touch "$BUILD_DIR/tmp/.tweaked_packages_removed"
 }
 
 # 定义更新argon主题的函数
 update_argon() {
+    # 检查是否已经更新过argon主题
+    if [ -f "$BUILD_DIR/tmp/.argon_updated" ]; then
+        echo "Argon already updated, skipping..." >&2
+        return 0
+    fi
+    
     local repo_url="https://github.com/ZqinKing/luci-theme-argon.git"
     local dst_theme_path="$BUILD_DIR/feeds/luci/themes/luci-theme-argon"
     local tmp_dir
@@ -1085,6 +1505,9 @@ update_argon() {
     mv "$tmp_dir" "$dst_theme_path"
     
     echo "luci-theme-argon 更新完成"
+    
+    # 标记argon主题已更新
+    touch "$BUILD_DIR/tmp/.argon_updated"
 }
 
 # 定义主函数，执行所有构建前的准备工作
