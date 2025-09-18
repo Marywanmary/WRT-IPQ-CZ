@@ -163,10 +163,59 @@ check_rebuild_dependencies() {
     return 0
 }
 
+# 等待依赖构建完成
+wait_for_dependencies() {
+    local dev_name="$1"
+    
+    # 解析设备名称获取源缩写和配置
+    if [[ $dev_name =~ ^([^_]+)_([^_]+)_([^_]+)$ ]]; then
+        local source="${BASH_REMATCH[2]}"
+        local config="${BASH_REMATCH[3]}"
+        
+        # 根据配置确定依赖
+        local dependency=""
+        if [[ "$config" == "Max" ]]; then
+            dependency="${BASH_REMATCH[1]}_${source}_Ultra"
+        elif [[ "$config" == "Pro" ]]; then
+            dependency="${BASH_REMATCH[1]}_${source}_Max"
+        fi
+        
+        if [[ -n "$dependency" ]]; then
+            echo "Waiting for $dependency to complete..." | tee -a "$FULL_LOG"
+            
+            # 检查依赖的构建是否完成
+            local dependency_marker="$BASE_PATH/temp_firmware/$dependency/build_completed"
+            local timeout=3600  # 1小时超时
+            local elapsed=0
+            
+            while [ ! -f "$dependency_marker" ] && [ $elapsed -lt $timeout ]; do
+                sleep 30
+                elapsed=$((elapsed + 30))
+                echo "Still waiting for $dependency... (${elapsed}s elapsed)" | tee -a "$FULL_LOG"
+            done
+            
+            if [ ! -f "$dependency_marker" ]; then
+                echo "Error: Timeout waiting for $dependency" | tee -a "$FULL_LOG" "$ERROR_LOG"
+                return 1
+            fi
+            
+            echo "Dependency $dependency completed, proceeding with build" | tee -a "$FULL_LOG"
+        fi
+    fi
+    
+    return 0
+}
+
 # 应用配置的顺序
 apply_base_config
 apply_specific_config
 remove_uhttpd_dependency
+
+# 等待依赖构建完成
+if ! wait_for_dependencies "$Dev"; then
+    echo "Failed to wait for dependencies" | tee -a "$FULL_LOG" "$ERROR_LOG"
+    exit 1
+fi
 
 # 切换到构建目录
 cd "$BASE_PATH/$BUILD_DIR"
@@ -352,6 +401,10 @@ grep -i "warning\|warn" "$FULL_LOG" >> "$WARNING_LOG" || echo "未发现警告�
 
 # 记录完成时间
 echo "Build completed at $(date)" | tee -a "$FULL_LOG"
+
+# 创建构建完成标记
+touch "$DEVICE_TEMP_DIR/build_completed"
+echo "Build completed marker created for $Dev" | tee -a "$FULL_LOG"
 
 echo "Build completed for $Dev. All artifacts are in $DEVICE_TEMP_DIR" | tee -a "$FULL_LOG"
 
