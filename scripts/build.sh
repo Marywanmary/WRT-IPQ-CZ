@@ -63,11 +63,69 @@ remove_uhttpd_dependency() {
     fi
 }
 
-# 定义应用配置文件的函数
-apply_config() {
-    # 复制配置文件到构建目录
-    \cp -f "$CONFIG_FILE" "$BASE_PATH/$BUILD_DIR/.config"
-    echo "Applied config from $CONFIG_FILE" | tee -a "$FULL_LOG"
+# 定义应用基础配置的函数
+apply_base_config() {
+    local base_config="$BASE_PATH/base_config/.config"
+    if [ -f "$base_config" ]; then
+        \cp -f "$base_config" "$BASE_PATH/$BUILD_DIR/.config"
+        echo "Applied base config" | tee -a "$FULL_LOG"
+    fi
+}
+
+# 定义应用特定配置的函数
+apply_specific_config() {
+    local specific_config="$CONFIG_FILE"
+    
+    # 提取特定配置中的差异项
+    grep -v "^#" "$specific_config" | grep -v "^$" | while read line; do
+        # 检查是否是配置项
+        if [[ $line =~ ^CONFIG_ ]]; then
+            # 提取配置项名称
+            config_name=$(echo "$line" | cut -d'=' -f1)
+            # 在基础配置中更新该配置项
+            sed -i "s/^$config_name=.*/$line/" "$BASE_PATH/$BUILD_DIR/.config"
+        fi
+    done
+    
+    echo "Applied specific config for $Dev" | tee -a "$FULL_LOG"
+}
+
+# 定义并行下载依赖的函数
+download_dependencies() {
+    echo "Downloading dependencies in parallel..." | tee -a "$FULL_LOG"
+    
+    # 使用并行下载
+    make download -j$(($(nproc) * 2)) 2>&1 | tee -a "$FULL_LOG"
+    
+    # 检查下载是否成功
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+        echo "Parallel download failed, trying sequential download..." | tee -a "$FULL_LOG"
+        make download 2>&1 | tee -a "$FULL_LOG"
+    fi
+}
+
+# 定义分阶段构建的函数
+staged_build() {
+    echo "Starting staged build..." | tee -a "$FULL_LOG"
+    
+    # 第一阶段：编译基础包
+    echo "Stage 1: Building base packages..." | tee -a "$FULL_LOG"
+    make -j$(($(nproc) + 1)) package/compile 2>&1 | tee -a "$FULL_LOG"
+    
+    # 第二阶段：编译内核模块
+    echo "Stage 2: Building kernel modules..." | tee -a "$FULL_LOG"
+    make -j$(($(nproc) + 1)) target/compile 2>&1 | tee -a "$FULL_LOG"
+    
+    # 第三阶段：生成固件
+    echo "Stage 3: Generating firmware..." | tee -a "$FULL_LOG"
+    make -j$(($(nproc) + 1)) target/install 2>&1 | tee -a "$FULL_LOG"
+    
+    # 检查构建是否成功
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then
+        echo "Staged build failed, trying with verbose output..." | tee -a "$FULL_LOG"
+        make -j1 V=s 2>&1 | tee -a "$FULL_LOG"
+        exit 1
+    fi
 }
 
 # 从INI文件中读取仓库地址
@@ -97,13 +155,18 @@ echo "Using commit hash: $COMMIT_HASH" | tee -a "$FULL_LOG"
 echo "Running update script..." | tee -a "$FULL_LOG"
 "$SCRIPT_DIR/update.sh" "$REPO_URL" "$REPO_BRANCH" "$BASE_PATH/$BUILD_DIR" "$COMMIT_HASH" 2>&1 | tee -a "$FULL_LOG"
 
-# 应用配置文件
-apply_config
+# 应用基础配置
+apply_base_config
+
+# 应用特定配置
+apply_specific_config
+
 # 移除uhttpd依赖
 remove_uhttpd_dependency
 
 # 切换到构建目录
 cd "$BASE_PATH/$BUILD_DIR"
+
 # 执行make defconfig命令生成默认配置
 echo "Running make defconfig..." | tee -a "$FULL_LOG"
 make defconfig 2>&1 | tee -a "$FULL_LOG"
@@ -140,18 +203,12 @@ if [ -d "$BASE_PATH/$BUILD_DIR/staging_dir" ] && [ -d "$BASE_PATH/$BUILD_DIR/bui
     echo "Dependencies already built, skipping download..." | tee -a "$FULL_LOG"
 else
     # 下载编译所需的源代码包
-    echo "Downloading sources..." | tee -a "$FULL_LOG"
-    make download -j$(($(nproc) * 2)) 2>&1 | tee -a "$FULL_LOG"
+    download_dependencies
 fi
 
 # 开始编译固件
 echo "Starting firmware build..." | tee -a "$FULL_LOG"
-make -j$(($(nproc) + 1)) 2>&1 | tee -a "$FULL_LOG" || {
-    echo "Build failed, trying with verbose output..." | tee -a "$FULL_LOG" "$ERROR_LOG"
-    make -j1 V=s 2>&1 | tee -a "$FULL_LOG" "$ERROR_LOG"
-    echo "Build completed with errors" | tee -a "$FULL_LOG" "$ERROR_LOG"
-    exit 1
-}
+staged_build
 
 # 创建临时目录用于存放所有产出物
 TEMP_DIR="$BASE_PATH/temp_firmware"
