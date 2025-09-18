@@ -49,85 +49,6 @@ read_ini_by_key() {
     awk -F"=" -v key="$key" '$1 == key {print $2}' "$INI_FILE"
 }
 
-# 定义移除uhttpd依赖的函数
-remove_uhttpd_dependency() {
-    local config_path="$BASE_PATH/$BUILD_DIR/.config"
-    local luci_makefile_path="$BASE_PATH/$BUILD_DIR/feeds/luci/collections/luci/Makefile"
-    # 检查是否启用了quickfile插件
-    if grep -q "CONFIG_PACKAGE_luci-app-quickfile=y" "$config_path"; then
-        if [ -f "$luci_makefile_path" ]; then
-            # 删除包含luci-light的行
-            sed -i '/luci-light/d' "$luci_makefile_path"
-            echo "Removed uhttpd (luci-light) dependency as luci-app-quickfile (nginx) is enabled." | tee -a "$FULL_LOG"
-        fi
-    fi
-}
-
-# 定义应用基础配置的函数
-apply_base_config() {
-    local base_config="$BASE_PATH/base_config/.config"
-    if [ -f "$base_config" ]; then
-        \cp -f "$base_config" "$BASE_PATH/$BUILD_DIR/.config"
-        echo "Applied base config" | tee -a "$FULL_LOG"
-    fi
-}
-
-# 定义应用特定配置的函数
-apply_specific_config() {
-    local specific_config="$CONFIG_FILE"
-    
-    # 提取特定配置中的差异项
-    grep -v "^#" "$specific_config" | grep -v "^$" | while read line; do
-        # 检查是否是配置项
-        if [[ $line =~ ^CONFIG_ ]]; then
-            # 提取配置项名称
-            config_name=$(echo "$line" | cut -d'=' -f1)
-            # 在基础配置中更新该配置项
-            sed -i "s/^$config_name=.*/$line/" "$BASE_PATH/$BUILD_DIR/.config"
-        fi
-    done
-    
-    echo "Applied specific config for $Dev" | tee -a "$FULL_LOG"
-}
-
-# 定义并行下载依赖的函数
-download_dependencies() {
-    echo "Downloading dependencies in parallel..." | tee -a "$FULL_LOG"
-    
-    # 使用并行下载
-    make download -j$(($(nproc) * 2)) 2>&1 | tee -a "$FULL_LOG"
-    
-    # 检查下载是否成功
-    if [ ${PIPESTATUS[0]} -ne 0 ]; then
-        echo "Parallel download failed, trying sequential download..." | tee -a "$FULL_LOG"
-        make download 2>&1 | tee -a "$FULL_LOG"
-    fi
-}
-
-# 定义分阶段构建的函数
-staged_build() {
-    echo "Starting staged build..." | tee -a "$FULL_LOG"
-    
-    # 第一阶段：编译基础包
-    echo "Stage 1: Building base packages..." | tee -a "$FULL_LOG"
-    make -j$(($(nproc) + 1)) package/compile 2>&1 | tee -a "$FULL_LOG"
-    
-    # 第二阶段：编译内核模块
-    echo "Stage 2: Building kernel modules..." | tee -a "$FULL_LOG"
-    make -j$(($(nproc) + 1)) target/compile 2>&1 | tee -a "$FULL_LOG"
-    
-    # 第三阶段：生成固件
-    echo "Stage 3: Generating firmware..." | tee -a "$FULL_LOG"
-    make -j$(($(nproc) + 1)) target/install 2>&1 | tee -a "$FULL_LOG"
-    
-    # 检查构建是否成功
-    if [ ${PIPESTATUS[0]} -ne 0 ]; then
-        echo "Staged build failed, trying with verbose output..." | tee -a "$FULL_LOG"
-        make -j1 V=s 2>&1 | tee -a "$FULL_LOG"
-        exit 1
-    fi
-}
-
 # 从INI文件中读取仓库地址
 REPO_URL=$(read_ini_by_key "REPO_URL")
 # 从INI文件中读取仓库分支
@@ -151,9 +72,55 @@ echo "Using branch: $REPO_BRANCH" | tee -a "$FULL_LOG"
 echo "Using build directory: $BUILD_DIR" | tee -a "$FULL_LOG"
 echo "Using commit hash: $COMMIT_HASH" | tee -a "$FULL_LOG"
 
-# 执行更新脚本，传入仓库地址、分支、构建目录和提交哈希值
-echo "Running update script..." | tee -a "$FULL_LOG"
-"$SCRIPT_DIR/update.sh" "$REPO_URL" "$REPO_BRANCH" "$BASE_PATH/$BUILD_DIR" "$COMMIT_HASH" 2>&1 | tee -a "$FULL_LOG"
+# 分布式构建：检查是否需要执行更新脚本
+if [ ! -f "$BASE_PATH/$BUILD_DIR/.update_completed" ]; then
+    echo "Running update script..." | tee -a "$FULL_LOG"
+    "$SCRIPT_DIR/update.sh" "$REPO_URL" "$REPO_BRANCH" "$BASE_PATH/$BUILD_DIR" "$COMMIT_HASH" 2>&1 | tee -a "$FULL_LOG"
+    touch "$BASE_PATH/$BUILD_DIR/.update_completed"
+else
+    echo "Update already completed, skipping..." | tee -a "$FULL_LOG"
+fi
+
+# 应用基础配置
+apply_base_config() {
+    local base_config="$BASE_PATH/base_config/.config"
+    if [ -f "$base_config" ]; then
+        \cp -f "$base_config" "$BASE_PATH/$BUILD_DIR/.config"
+        echo "Applied base config" | tee -a "$FULL_LOG"
+    fi
+}
+
+# 应用特定配置
+apply_specific_config() {
+    local specific_config="$CONFIG_FILE"
+    
+    # 提取特定配置中的差异项
+    grep -v "^#" "$specific_config" | grep -v "^$" | while read line; do
+        # 检查是否是配置项
+        if [[ $line =~ ^CONFIG_ ]]; then
+            # 提取配置项名称
+            config_name=$(echo "$line" | cut -d'=' -f1)
+            # 在基础配置中更新该配置项
+            sed -i "s/^$config_name=.*/$line/" "$BASE_PATH/$BUILD_DIR/.config"
+        fi
+    done
+    
+    echo "Applied specific config for $Dev" | tee -a "$FULL_LOG"
+}
+
+# 定义移除uhttpd依赖的函数
+remove_uhttpd_dependency() {
+    local config_path="$BASE_PATH/$BUILD_DIR/.config"
+    local luci_makefile_path="$BASE_PATH/$BUILD_DIR/feeds/luci/collections/luci/Makefile"
+    # 检查是否启用了quickfile插件
+    if grep -q "CONFIG_PACKAGE_luci-app-quickfile=y" "$config_path"; then
+        if [ -f "$luci_makefile_path" ]; then
+            # 删除包含luci-light的行
+            sed -i '/luci-light/d' "$luci_makefile_path"
+            echo "Removed uhttpd (luci-light) dependency as luci-app-quickfile (nginx) is enabled." | tee -a "$FULL_LOG"
+        fi
+    fi
+}
 
 # 应用基础配置
 apply_base_config
@@ -198,17 +165,31 @@ if [[ -d $TARGET_DIR ]]; then
     find "$TARGET_DIR" -type f \( -name "*.bin" -o -name "*.manifest" -o -name "*efi.img.gz" -o -name "*.itb" -o -name "*.fip" -o -name "*.ubi" -o -name "*rootfs.tar.gz" -o -name ".config" -o -name "config.buildinfo" -o -name "Packages.manifest" \) -exec rm -f {} +
 fi
 
-# 增量构建：检查是否已经构建过依赖
-if [ -d "$BASE_PATH/$BUILD_DIR/staging_dir" ] && [ -d "$BASE_PATH/$BUILD_DIR/build_dir" ]; then
+# 分布式构建：检查是否已经构建过依赖
+if [ -f "$BASE_PATH/$BUILD_DIR/.dependencies_built" ]; then
     echo "Dependencies already built, skipping download..." | tee -a "$FULL_LOG"
 else
     # 下载编译所需的源代码包
-    download_dependencies
+    echo "Downloading sources..." | tee -a "$FULL_LOG"
+    make download -j$(($(nproc) * 2)) 2>&1 | tee -a "$FULL_LOG"
+    
+    # 构建依赖
+    echo "Building dependencies..." | tee -a "$FULL_LOG"
+    make -j$(nproc) toolchain/install 2>&1 | tee -a "$FULL_LOG"
+    make -j$(nproc) package/compile 2>&1 | tee -a "$FULL_LOG"
+    
+    # 标记依赖已构建
+    touch "$BASE_PATH/$BUILD_DIR/.dependencies_built"
 fi
 
 # 开始编译固件
 echo "Starting firmware build..." | tee -a "$FULL_LOG"
-staged_build
+make -j$(($(nproc) + 1)) 2>&1 | tee -a "$FULL_LOG" || {
+    echo "Build failed, trying with verbose output..." | tee -a "$FULL_LOG" "$ERROR_LOG"
+    make -j1 V=s 2>&1 | tee -a "$FULL_LOG" "$ERROR_LOG"
+    echo "Build completed with errors" | tee -a "$FULL_LOG" "$ERROR_LOG"
+    exit 1
+}
 
 # 创建临时目录用于存放所有产出物
 TEMP_DIR="$BASE_PATH/temp_firmware"
@@ -324,12 +305,6 @@ else
     echo "Device name '$Dev' does not follow the three-part structure, skipping renaming." | tee -a "$FULL_LOG" "$WARNING_LOG"
 fi
 
-# 如果存在action_build目录，则执行清理命令
-if [[ -d $BASE_PATH/action_build ]]; then
-    echo "Cleaning build directory..." | tee -a "$FULL_LOG"
-    make clean 2>&1 | tee -a "$FULL_LOG"
-fi
-
 # 从完整日志中提取错误信息
 echo "=== 错误日志 ===" > "$ERROR_LOG"
 grep -i "error\|failed\|failure" "$FULL_LOG" | grep -v "make.*error.*required" >> "$ERROR_LOG" || echo "未发现错误信息" >> "$ERROR_LOG"
@@ -342,3 +317,6 @@ grep -i "warning\|warn" "$FULL_LOG" >> "$WARNING_LOG" || echo "未发现警告�
 echo "Build completed at $(date)" | tee -a "$FULL_LOG"
 
 echo "Build completed for $Dev. All artifacts are in $DEVICE_TEMP_DIR" | tee -a "$FULL_LOG"
+
+# 输出构建状态供后续作业使用
+echo "build_status=success" >> $GITHUB_OUTPUT
