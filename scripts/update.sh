@@ -31,6 +31,13 @@ GOLANG_BRANCH="25.x"              # Go语言包的分支版本
 THEME_SET="argon"                  # 默认网页主题名称
 LAN_ADDR="192.168.111.1"           # 路由器默认管理地址
 
+# 分布式构建：使用并行处理
+# 设置并行处理的函数数量
+PARALLEL_JOBS=$(nproc)
+if [ $PARALLEL_JOBS -gt 4 ]; then
+    PARALLEL_JOBS=4
+fi
+
 # 定义克隆代码仓库的函数
 clone_repo() {
     if [[ ! -d $BUILD_DIR ]]; then
@@ -203,6 +210,39 @@ remove_unwanted_packages() {
     
     # 标记不需要的软件包已移除
     touch "$BUILD_DIR/tmp/.packages_removed"
+}
+
+# 定义并行处理函数
+parallel_process() {
+    local tasks=("$@")
+    local pids=()
+    local task_count=${#tasks[@]}
+    local running=0
+    
+    for ((i=0; i<task_count; i++)); do
+        # 如果正在运行的任务数达到最大并行数，等待一个完成
+        while [ $running -ge $PARALLEL_JOBS ]; do
+            for j in "${!pids[@]}"; do
+                if ! kill -0 "${pids[j]}" 2>/dev/null; then
+                    unset pids[j]
+                    ((running--))
+                    break
+                fi
+            done
+            sleep 0.1
+        done
+        
+        # 启动新任务
+        echo "Starting task: ${tasks[i]}"
+        ${tasks[i]} &
+        pids+=($!)
+        ((running++))
+    done
+    
+    # 等待所有任务完成
+    for pid in "${pids[@]}"; do
+        wait $pid
+    done
 }
 
 # 定义更新Go语言支持包的函数
@@ -465,6 +505,60 @@ update_affinity_script() {
     
     # 标记CPU亲和性脚本已更新
     touch "$BUILD_DIR/tmp/.affinity_script_updated"
+}
+
+# 定义并行处理优化任务的函数
+optimize_tasks_parallel() {
+    # 定义并行任务数组
+    local tasks=(
+        "update_golang"
+        "fix_default_set"
+        "fix_miniupnpd"
+        "change_dnsmasq2full"
+        "fix_mk_def_depends"
+        "add_wifi_default_set"
+        "update_default_lan_addr"
+        "remove_something_nss_kmod"
+        "update_affinity_script"
+        "apply_hash_fixes"
+        "update_ath11k_fw"
+        "fix_mkpkg_format_invalid"
+        "add_ax6600_led"
+        "change_cpuusage"
+        "update_tcping"
+        "set_custom_task"
+        "apply_passwall_tweaks"
+        "install_opkg_distfeeds"
+        "update_nss_pbuf_performance"
+        "set_build_signature"
+        "update_nss_diag"
+        "update_menu_location"
+        "fix_compile_coremark"
+        "update_homeproxy"
+        "update_dnsmasq_conf"
+        "add_backup_info_to_sysupgrade"
+        "update_script_priority"
+        "update_mosdns_deconfig"
+        "fix_quickstart"
+        "update_oaf_deconfig"
+        "support_fw4_adg"
+        "add_timecontrol"
+        "add_gecoosac"
+        "add_quickfile"
+        "update_lucky"
+        "fix_rust_compile_error"
+        "update_smartdns"
+        "update_diskman"
+        "set_nginx_default_config"
+        "update_uwsgi_limit_as"
+        "remove_tweaked_packages"
+        "update_argon"
+        "fix_easytier"
+        "update_geoip"
+    )
+    
+    # 并行处理所有任务
+    parallel_process "${tasks[@]}"
 }
 
 # 定义修正软件包哈希值的通用函数
@@ -895,85 +989,6 @@ update_dnsmasq_conf() {
     
     # 标记dnsmasq配置已更新
     touch "$BUILD_DIR/tmp/.dnsmasq_conf_updated"
-}
-
-# 定义更新软件包版本的通用函数
-update_package() {
-    local dir=$(find "$BUILD_DIR/package" \( -type d -o -type l \) -name "$1")
-    # 查找指定软件包的目录
-    
-    if [ -z "$dir" ]; then
-        return 0
-        # 如果找不到目录，直接返回
-    fi
-    
-    local branch="$2"
-    if [ -z "$branch" ]; then
-        branch="releases"
-        # 默认使用releases分支
-    fi
-    
-    local mk_path="$dir/Makefile"
-    if [ -f "$mk_path" ]; then
-        # 提取仓库信息
-        local PKG_REPO=$(grep -oE "^PKG_GIT_URL.*github.com(/[-_a-zA-Z0-9]{1,}){2}" "$mk_path" | awk -F"/" '{print $(NF - 1) "/" $NF}')
-        if [ -z "$PKG_REPO" ]; then
-            PKG_REPO=$(grep -oE "^PKG_SOURCE_URL.*github.com(/[-_a-zA-Z0-9]{1,}){2}" "$mk_path" | awk -F"/" '{print $(NF - 1) "/" $NF}')
-            if [ -z "$PKG_REPO" ]; then
-                echo "错误：无法从 $mk_path 提取 PKG_REPO" >&2
-                return 1
-            fi
-        fi
-        
-        # 获取版本信息
-        local PKG_VER
-        if ! PKG_VER=$(curl -fsSL "https://api.github.com/repos/$PKG_REPO/$branch" | jq -r '.[0] | .tag_name // .name'); then
-            echo "错误：从 https://api.github.com/repos/$PKG_REPO/$branch 获取版本信息失败" >&2
-            return 1
-        fi
-        
-        if [ -n "$3" ]; then
-            PKG_VER="$3"
-            # 如果指定了版本，使用指定版本
-        fi
-        
-        # 获取提交哈希
-        local COMMIT_SHA
-        if ! COMMIT_SHA=$(curl -fsSL "https://api.github.com/repos/$PKG_REPO/tags" | jq -r '.[] | select(.name=="'$PKG_VER'") | .commit.sha' | cut -c1-7); then
-            echo "错误：从 https://api.github.com/repos/$PKG_REPO/tags 获取提交哈希失败" >&2
-            return 1
-        fi
-        
-        if [ -n "$COMMIT_SHA" ]; then
-            sed -i 's/^PKG_GIT_SHORT_COMMIT:=.*/PKG_GIT_SHORT_COMMIT:='$COMMIT_SHA'/g' "$mk_path"
-            # 更新提交哈希
-        fi
-        
-        PKG_VER=$(echo "$PKG_VER" | grep -oE "[\.0-9]{1,}")
-        # 提取版本号中的数字部分
-        
-        # 获取其他信息
-        local PKG_NAME=$(awk -F"=" '/PKG_NAME:=/ {print $NF}' "$mk_path" | grep -oE "[-_:/\$\(\)\?\.a-zA-Z0-9]{1,}")
-        local PKG_GIT_URL=$(awk -F"=" '/PKG_GIT_URL:=/ {print $NF}' "$mk_path")
-        local PKG_GIT_REF=$(awk -F"=" '/PKG_GIT_REF:=/ {print $NF}' "$mk_path")
-        
-        # 替换变量
-        PKG_GIT_URL=${PKG_GIT_URL//\$\(PKG_NAME\)/$PKG_NAME}
-        PKG_GIT_URL=${PKG_GIT_URL//\$\(PKG_VERSION\)/$PKG_VER}
-        
-        # 计算文件哈希
-        local PKG_HASH
-        if ! PKG_HASH=$(curl -fsSL "$PKG_GIT_URL""$PKG_NAME"-"$PKG_VER".tar.gz" | sha256sum | cut -b -64); then
-            echo "错误：从 $PKG_GIT_URL$PKG_NAME-$PKG_VER.tar.gz 获取软件包哈希失败" >&2
-            return 1
-        fi
-        
-        # 更新Makefile
-        sed -i 's/^PKG_VERSION:=.*/PKG_VERSION:='$PKG_VER'/g' "$mk_path"
-        sed -i 's/^PKG_HASH:=.*/PKG_HASH:='$PKG_HASH'/g' "$mk_path"
-        
-        echo "更新软件包 $1 到 $PKG_VER $PKG_HASH"
-    fi
 }
 
 # 定义添加系统升级时的备份信息的函数
@@ -1517,55 +1532,4 @@ main() {
     reset_feeds_conf        # 重置软件源配置
     update_feeds            # 更新软件源
     remove_unwanted_packages # 移除不需要的软件包
-    remove_tweaked_packages # 移除调整过的软件包
-    update_homeproxy        # 更新homeproxy代理工具
-    fix_default_set         # 修复默认设置
-    fix_miniupnpd           # 修复miniupnpd
-    update_golang           # 更新Go语言支持
-    change_dnsmasq2full     # 替换dnsmasq为full版本
-    fix_mk_def_depends      # 修复依赖关系
-    add_wifi_default_set    # 添加WiFi默认设置
-    update_default_lan_addr # 更新默认LAN地址
-    remove_something_nss_kmod # 移除NSS相关模块
-    update_affinity_script  # 更新CPU亲和性脚本
-    update_ath11k_fw       # 更新ath11k固件
-    change_cpuusage         # 修改CPU使用率显示
-    update_tcping           # 更新tcping工具
-    add_ax6600_led          # 添加AX6600 LED控制
-    set_custom_task         # 设置自定义任务
-    apply_passwall_tweaks   # 应用Passwall调整
-    install_opkg_distfeeds  # 安装软件源配置
-    update_nss_pbuf_performance # 更新NSS性能设置
-    set_build_signature     # 设置构建签名
-    update_nss_diag         # 更新NSS诊断脚本
-    update_menu_location    # 更新菜单位置
-    fix_compile_coremark    # 修复coremark编译
-    update_dnsmasq_conf     # 更新dnsmasq配置
-    add_backup_info_to_sysupgrade # 添加备份信息
-    update_mosdns_deconfig  # 更新mosdns配置
-    fix_quickstart          # 修复quickstart
-    update_oaf_deconfig     # 更新oaf配置
-    add_timecontrol         # 添加时间控制
-    add_gecoosac            # 添加gecoosac
-    add_quickfile           # 添加quickfile
-    update_lucky            # 更新lucky工具
-    fix_rust_compile_error  # 修复Rust编译错误
-    update_smartdns         # 更新smartdns
-    update_diskman          # 更新diskman
-    set_nginx_default_config # 设置Nginx默认配置
-    update_uwsgi_limit_as   # 更新uwsgi内存限制
-    update_argon            # 更新argon主题
-    install_feeds           # 安装所有软件源
-    support_fw4_adg         # 支持防火墙4的AdGuardHome
-    update_script_priority  # 更新启动顺序
-    fix_easytier            # 修复easytier
-    update_geoip            # 更新geoip数据库
-    #update_package "runc" "releases" "v1.2.6"  # 更新runc容器工具
-    #update_package "containerd" "releases" "v1.7.27"  # 更新containerd
-    #update_package "docker" "tags" "v28.2.2"  # 更新docker
-    #update_package "dockerd" "releases" "v28.2.2"  # 更新dockerd
-    apply_hash_fixes        # 应用哈希值修正
-}
-
-# 执行主函数
-main "$@"
+    remove_tweaked
