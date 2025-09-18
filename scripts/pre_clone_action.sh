@@ -41,6 +41,17 @@ REPO_BRANCH=${REPO_BRANCH:-main}
 # 定义构建目录路径
 BUILD_DIR="$BASE_PATH/action_build"
 
+# 定义共享构建目录路径
+SHARED_BUILD_DIR="$BASE_PATH/shared_build"
+
+# 确保共享目录存在
+mkdir -p "$SHARED_BUILD_DIR"
+
+# 创建符号链接到共享目录
+if [ ! -L "$BUILD_DIR" ]; then
+    ln -sf "$SHARED_BUILD_DIR" "$BUILD_DIR"
+fi
+
 # 显示仓库地址和分支
 echo $REPO_URL $REPO_BRANCH
 # 将仓库地址和分支信息写入标记文件
@@ -65,4 +76,18 @@ PROJECT_MIRRORS_FILE="$BUILD_DIR/scripts/projectsmirrors.json"
 if [ -f "$PROJECT_MIRRORS_FILE" ]; then
     # 删除包含国内镜像源的行
     sed -i '/.cn\//d; /tencent/d; /aliyun/d' "$PROJECT_MIRRORS_FILE"
+fi
+
+# 创建基础配置目录
+mkdir -p "$BASE_PATH/base_config"
+
+# 如果基础配置不存在，创建它
+if [ ! -f "$BASE_PATH/base_config/.config" ]; then
+    echo "Creating base config..."
+    # 使用 Pro 配置作为基础配置
+    cp "$BASE_PATH/deconfig/ipq60xx_immwrt_Pro.config" "$BASE_PATH/base_config/.config"
+    # 移除特定于 Pro/Max/Ultra 的配置项
+    sed -i '/CONFIG_PACKAGE_luci-app-quickfile/d' "$BASE_PATH/base_config/.config"
+    sed -i '/CONFIG_PACKAGE_luci-app-timecontrol/d' "$BASE_PATH/base_config/.config"
+    sed -i '/CONFIG_PACKAGE_luci-app-gecoosac/d' "$BASE_PATH/base_config/.config"
 fi
