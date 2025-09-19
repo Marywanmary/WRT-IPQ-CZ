@@ -20,38 +20,57 @@ if [ -f "feeds.conf.default" ]; then
     cp feeds.conf.default feeds.conf.default.bak
 fi
 
-# 2. 添加第三方软件源到feeds.conf.default（按优先级从高到低）
-cat > feeds.conf.default << 'EOF'
-src-link packages
-src-link luci
-# # Go 语言支持（解决 golang/host 依赖问题）
-# src-git golang https://github.com/sbwml/packages_lang_golang;25.x
-src-git tailscale https://github.com/tailscale/tailscale
-src-git taskplan https://github.com/sirpdboy/luci-app-taskplan
-src-git lucky https://github.com/gdy666/luci-app-lucky
-src-git momo https://github.com/nikkinikki-org/OpenWrt-momo
-# 注意：small-package放在最后，优先级最低
-src-git small-package https://github.com/kenzok8/small-package
-EOF
+# 2. 创建临时文件
+TEMP_FEEDS=$(mktemp)
 
-echo "第三方软件源配置已添加到feeds.conf.default"
+# 3. 逐行添加源配置（避免heredoc可能引入的问题）
+echo "src-link packages" > "$TEMP_FEEDS"
+echo "src-link luci" >> "$TEMP_FEEDS"
+# echo "# Go 语言支持（解决 golang/host 依赖问题）" >> "$TEMP_FEEDS"
+# echo "src-git golang https://github.com/sbwml/packages_lang_golang;25.x" >> "$TEMP_FEEDS"
+echo "src-git tailscale https://github.com/tailscale/tailscale" >> "$TEMP_FEEDS"
+echo "src-git taskplan https://github.com/sirpdboy/luci-app-taskplan" >> "$TEMP_FEEDS"
+echo "src-git lucky https://github.com/gdy666/luci-app-lucky" >> "$TEMP_FEEDS"
+echo "src-git momo https://github.com/nikkinikki-org/OpenWrt-momo" >> "$TEMP_FEEDS"
+echo "# 注意：small-package放在最后，优先级最低" >> "$TEMP_FEEDS"
+echo "src-git small-package https://github.com/kenzok8/small-package" >> "$TEMP_FEEDS"
 
-# 3. 同步到feeds.conf
-echo "同步feeds.conf..."
+# 4. 验证临时文件内容
+echo "验证临时文件内容..."
+cat "$TEMP_FEEDS"
+echo "======================="
+
+# 5. 替换feeds.conf.default
+cp "$TEMP_FEEDS" feeds.conf.default
+echo "✓ 已更新feeds.conf.default"
+
+# 6. 同步到feeds.conf
 cp feeds.conf.default feeds.conf
 echo "✓ 已同步feeds.conf"
 
-# 4. 验证源配置
-echo "验证源配置..."
-echo "===== 当前源配置 ====="
-cat feeds.conf
-echo "======================="
+# 7. 清理临时文件
+rm -f "$TEMP_FEEDS"
 
-# 5. 更新软件源
+# 8. 验证源配置
+echo "验证源配置..."
+echo "===== 当前feeds.conf内容 ====="
+cat feeds.conf
+echo "============================"
+
+# 9. 检查语法错误
+echo "检查feeds.conf语法..."
+if ./scripts/feeds list >/dev/null 2>&1; then
+    echo "✓ feeds.conf语法正确"
+else
+    echo "✗ feeds.conf语法错误，请检查内容"
+    exit 1
+fi
+
+# 10. 更新软件源
 echo "更新软件源..."
 ./scripts/feeds update -a
 
-# 6. 按照作者建议删除冲突插件
+# 11. 按照作者建议删除冲突插件
 echo "按照作者建议删除冲突插件..."
 CONFLICT_PACKAGES="base-files dnsmasq firewall* fullconenat libnftnl nftables ppp opkg ucl upx vsftpd* miniupnpd-iptables wireless-regdb"
 
@@ -62,15 +81,15 @@ for pkg in $CONFLICT_PACKAGES; do
     fi
 done
 
-# 7. 清理软件源
+# 12. 清理软件源
 echo "清理软件源..."
 ./scripts/feeds clean
 
-# 8. 安装软件源
+# 13. 安装软件源
 echo "安装软件源..."
 ./scripts/feeds install -a
 
-# # 9. 验证 Go 语言支持
+# # 14. 验证 Go 语言支持
 # echo "验证 Go 语言支持..."
 # if [ -d "feeds/packages.lang_golang" ]; then
 #     echo "✓ Go 语言支持已正确添加"
@@ -78,7 +97,7 @@ echo "安装软件源..."
 #     echo "⚠ Go 语言支持可能有问题，检查 feeds 更新结果"
 # fi
 
-# 10. 修复配置文件（如果存在）
+# 15. 修复配置文件（如果存在）
 if [ -f ".config" ]; then
     echo "修复配置文件..."
     cp .config .config.backup
