@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# 从OpenWrt配置文件中提取设备名称列表
+# 输出格式：JSON数组，例如：["jdcloud_re-ss-01","jdcloud_re-cs-02"]
+
 CONFIG_FILE=$1
 
 # 检查配置文件是否存在
