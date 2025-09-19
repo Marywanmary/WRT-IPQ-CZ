@@ -71,7 +71,7 @@ jobs:
         config: ["Ultra", "Max", "Pro"]
         # 设备列表（从setup作业获取）
         device: ${{ fromJson(needs.setup.outputs.devices) }}
-      max-parallel: 6  # 最大并行数（修改为6）
+      max-parallel: 6  # 最大并行数
       fail-fast: false  # 不快速失败
 
     steps:
@@ -88,7 +88,7 @@ jobs:
         df -h
         echo "========================="
 
-    # 释放磁盘空间（使用推荐的Action）
+    # 释放磁盘空间（修复后的配置）
     - name: 释放磁盘空间
       uses: jlumbroso/free-disk-space@main
       with:
@@ -106,8 +106,6 @@ jobs:
         swap-storage: true
         # 清理Docker镜像（如果有）
         docker-images: true
-        # 清理GitHub Actions缓存
-        github-packages: true
 
     # 显示清理后的磁盘空间
     - name: 显示清理后的磁盘空间
