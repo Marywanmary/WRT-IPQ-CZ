@@ -15,5 +15,8 @@ devices=$(grep "^CONFIG_TARGET_DEVICE_.*_DEVICE_.*=y$" "$CONFIG_FILE" | \
           sed -E 's/^CONFIG_TARGET_DEVICE_[^_]+_[^_]+_DEVICE_([^=]+)=y$/\1/' | \
           sort -u)
 
-# 输出设备列表，用空格分隔
-echo "$devices"
+# 将设备列表转换为JSON数组格式
+json_devices=$(echo "$devices" | jq -R . | jq -s .)
+
+# 输出JSON格式的设备列表
+echo "$json_devices"
