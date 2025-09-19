@@ -19,6 +19,18 @@ sed -i 's/192\.168\.[0-9]*\.[0-9]*/192.168.111.1/g' "$OPENWRT_DIR/package/base-f
 echo "设置默认主机名为: WRT"
 sed -i "s/hostname='.*'/hostname='WRT'/g" "$OPENWRT_DIR/package/base-files/files/bin/config_generate"
 
+# 设置管理员密码为空
+echo "设置管理员密码为空"
+SHADOW_FILE="$OPENWRT_DIR/package/base-files/files/etc/shadow"
+if [ -f "$SHADOW_FILE" ]; then
+    # 修改root密码为空（第二个字段为空表示无密码）
+    sed -i 's/^root:[^:]*:/root::/' "$SHADOW_FILE"
+else
+    # 如果shadow文件不存在，创建一个
+    mkdir -p "$OPENWRT_DIR/package/base-files/files/etc"
+    echo "root:::0:0:99999:7:::" > "$SHADOW_FILE"
+fi
+
 # 设置无线密码为空
 echo "设置无线密码为空"
 if [ -f "$OPENWRT_DIR/package/kernel/mac80211/files/lib/wifi/mac80211.sh" ]; then
