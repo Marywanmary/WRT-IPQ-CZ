@@ -71,7 +71,7 @@ jobs:
         config: ["Ultra", "Max", "Pro"]
         # 设备列表（从setup作业获取）
         device: ${{ fromJson(needs.setup.outputs.devices) }}
-      max-parallel: 4  # 最大并行数
+      max-parallel: 6  # 最大并行数（修改为6）
       fail-fast: false  # 不快速失败
 
     steps:
