@@ -110,12 +110,28 @@ jobs:
         df -h
         echo "============================="
 
-    # 安装编译环境
+    # 安装编译环境（修复后的命令）
     - name: 安装编译环境
       run: |
+        echo "===== 安装编译环境 ====="
         sudo apt-get update
-        sudo apt-get install -y python3-distutils || sudo apt-get install -y python3-setuptools
-        sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget ccache xz-utils python3-distutils python3-pyelftools jq
+        
+        # 检查Ubuntu版本
+        UBUNTU_VERSION=$(lsb_release -rs)
+        echo "Ubuntu版本: $UBUNTU_VERSION"
+        
+        # 在Ubuntu 22.04及更高版本中，python3-distutils已被弃用
+        # 直接安装python3-setuptools，它提供了相同的功能
+        echo "安装Python相关依赖..."
+        sudo apt-get install -y python3-setuptools
+        
+        # 安装其他编译依赖
+        echo "安装编译工具链..."
+        sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev rsync swig unzip zlib1g-dev file wget ccache xz-utils python3-pyelftools jq
+        
+        echo "验证安装..."
+        python3 --version
+        echo "===== 编译环境安装完成 ====="
 
     # 显示编译前系统信息
     - name: 显示编译前系统信息
