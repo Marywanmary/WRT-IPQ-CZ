@@ -7,7 +7,7 @@ on:
     # 北京时间每周五0点（UTC时间每周四16:00）
     - cron: '0 16 * * 4'
 
-# 环境变量设置
+# 环境变量设置（移除不必要的变量）
 env:
   CHIP: ipq60xx  # 芯片架构变量
 
@@ -114,16 +114,16 @@ jobs:
         df -h
         echo "============================="
 
-    # 安装编译环境
+    # 安装编译环境（修复后的命令）
     - name: 安装编译环境
       run: |
-       sudo apt-get update
-    
-       # 首先尝试安装python3-distutils，如果失败则安装替代包
-       sudo apt-get install -y python3-distutils || sudo apt-get install -y python3-setuptools
-    
-       # 安装其他编译依赖
-       sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget ccache xz-utils python3-pyelftools jq
+        sudo apt-get update
+        
+        # 首先尝试安装python3-distutils，如果失败则安装替代包
+        sudo apt-get install -y python3-distutils || sudo apt-get install -y python3-setuptools
+        
+        # 安装其他编译依赖
+        sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget ccache xz-utils python3-distutils python3-pyelftools jq
 
     # 显示编译前系统信息
     - name: 显示编译前系统信息
@@ -194,7 +194,13 @@ jobs:
       run: |
         ./scripts/add-custom-feeds.sh openwrt
 
-    # 合并配置文件
+    # 设置默认配置（使用修改后的脚本）
+    - name: 设置默认配置
+      run: |
+        chmod +x scripts/set-default-config.sh
+        ./scripts/set-default-config.sh openwrt
+
+    # 合并配置文件（使用修改后的脚本）
     - name: 合并配置文件
       run: |
         ./scripts/merge-configs.sh ${{ matrix.repo.short }} ${{ matrix.config }} ${{ matrix.device }} ${{ env.CHIP }}
@@ -263,7 +269,7 @@ jobs:
 
     # 上传构建日志
     - name: 上传构建日志
-      if: always()
+    if: always()
       uses: actions/upload-artifact@v4
       with:
         name: build-logs-${{ matrix.repo.short }}-${{ matrix.config }}-${{ matrix.device }}-${{ env.CHIP }}
