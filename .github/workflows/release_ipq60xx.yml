@@ -1,0 +1,205 @@
+name: IPQ60XX Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  REPO_LIST: |
+    [
+      {"url": "https://github.com/laipeng668/immortalwrt.git", "branch": "master", "short": "immwrt"},
+      {"url": "https://github.com/laipeng668/openwrt.git", "branch": "master", "short": "openwrt"},
+      {"url": "https://github.com/laipeng668/openwrt-6.x.git", "branch": "k6.12-nss", "short": "libwrt"}
+    ]
+  CHIP: ipq60xx
+  CONFIGS: Pro Max Ultra
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      devices: ${{ steps.get-devices.outputs.devices }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Get Devices from Config
+      id: get-devices
+      run: |
+        chmod +x scripts/get-devices.sh
+        DEVICES=$(./scripts/get-devices.sh configs/${{ env.CHIP }}_base.config)
+        echo "devices=$DEVICES" >> $GITHUB_OUTPUT
+        echo "Found devices: $DEVICES"
+
+  build:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repo: ${{ fromJson(env.REPO_LIST) }}
+        config: ${{ fromJson('["Pro", "Max", "Ultra"]') }}
+        device: ${{ fromJson(needs.setup.outputs.devices) }}
+      max-parallel: 4
+      fail-fast: false
+
+    steps:
+    - name: Free Disk Space
+      uses: sbwml/actions@free-disk
+
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget ccache xz-utils python3-distutils python3-pyelftools
+
+    - name: Cache Configuration
+      id: cache-config
+      uses: actions/cache@v4
+      with:
+        path: configs/
+        key: ${{ runner.os }}-config-${{ env.CHIP }}-${{ hashFiles('configs/*.config') }}
+        restore-keys: |
+          ${{ runner.os }}-config-${{ env.CHIP }}-
+
+    - name: Cache Source Packages
+      id: cache-dl
+      uses: actions/cache@v4
+      with:
+        path: dl/
+        key: ${{ runner.os }}-dl-${{ matrix.repo.short }}-${{ env.CHIP }}-${{ hashFiles('feeds.conf', 'include/*') }}
+        restore-keys: |
+          ${{ runner.os }}-dl-${{ matrix.repo.short }}-${{ env.CHIP }}-
+
+    - name: Cache Toolchain
+      id: cache-staging
+      uses: actions/cache@v4
+      with:
+        path: staging_dir/
+        key: ${{ runner.os }}-staging-${{ matrix.repo.short }}-${{ env.CHIP }}-${{ matrix.device }}-${{ hashFiles('.config') }}
+        restore-keys: |
+          ${{ runner.os }}-staging-${{ matrix.repo.short }}-${{ env.CHIP }}-${{ matrix.device }}-
+
+    - name: Cache CCACHE
+      id: cache-ccache
+      uses: actions/cache@v4
+      with:
+        path: .ccache/
+        key: ${{ runner.os }}-ccache-${{ matrix.repo.short }}-${{ env.CHIP }}-${{ matrix.device }}-${{ matrix.config }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-${{ matrix.repo.short }}-${{ env.CHIP }}-${{ matrix.device }}-
+
+    - name: Clone OpenWrt Repository
+      run: |
+        git clone --depth 1 --branch ${{ matrix.repo.branch }} ${{ matrix.repo.url }} openwrt
+        cd openwrt
+        echo "REPO_SHORT=${{ matrix.repo.short }}" >> $GITHUB_ENV
+
+    - name: Add Custom Feeds
+      run: |
+        chmod +x scripts/add-custom-feeds.sh
+        ./scripts/add-custom-feeds.sh openwrt
+
+    - name: Merge Configurations
+      run: |
+        chmod +x scripts/merge-configs.sh
+        ./scripts/merge-configs.sh ${{ matrix.repo.short }} ${{ matrix.config }} ${{ matrix.device }} ${{ env.CHIP }}
+
+    - name: Update Feeds
+      run: |
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: Generate Configuration
+      run: |
+        cd openwrt
+        cp ../.config .config
+        make defconfig
+
+    - name: Build Firmware
+      run: |
+        cd openwrt
+        echo -e "$(nproc) thread build"
+        make -j$(nproc) V=s || echo "Build failed with exit code $?" > ../build-error.log
+        if [ -f ../build-error.log ]; then
+          cat ../build-error.log
+          exit 1
+        fi
+
+    - name: Prepare Artifacts
+      run: |
+        chmod +x scripts/rename-firmware.sh
+        ./scripts/rename-firmware.sh ${{ matrix.repo.short }} ${{ matrix.config }} ${{ matrix.device }} ${{ env.CHIP }}
+
+    - name: Upload Build Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-${{ matrix.repo.short }}-${{ matrix.config }}-${{ matrix.device }}-${{ env.CHIP }}
+        path: |
+          openwrt/build.log
+          build-error.log
+        retention-days: 7
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware-${{ matrix.repo.short }}-${{ matrix.config }}-${{ matrix.device }}-${{ env.CHIP }}
+        path: artifacts/
+        retention-days: 7
+
+  release:
+    needs: [setup, build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+
+    - name: Prepare Release
+      run: |
+        mkdir -p release
+        # 合并所有固件和配置文件
+        for dir in artifacts/firmware-*; do
+          if [ -d "$dir" ]; then
+            cp -r "$dir"/* release/
+          fi
+        done
+        # 合并所有配置文件
+        tar -czf release/${{ env.CHIP }}-config.tar.gz -C release ${{ env.CHIP }}-config/ 2>/dev/null || true
+        # 合并所有日志文件
+        tar -czf release/${{ env.CHIP }}-log.tar.gz -C release ${{ env.CHIP }}-log/ 2>/dev/null || true
+        # 合并所有软件包
+        tar -czf release/${{ env.CHIP }}-app.tar.gz -C release ${{ env.CHIP }}-app/ 2>/dev/null || true
+        # 生成发布说明
+        chmod +x scripts/generate-release-notes.sh
+        ./scripts/generate-release-notes.sh ${{ env.CHIP }} > release/RELEASE_NOTES.md
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: $(date +%Y%m%d)-${{ env.CHIP }}
+        name: ${{ env.CHIP }} Build $(date +%Y%m%d)
+        body_path: release/RELEASE_NOTES.md
+        files: |
+          release/*.bin
+          release/*.tar.gz
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
