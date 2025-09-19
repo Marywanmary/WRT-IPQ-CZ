@@ -73,7 +73,7 @@ jobs:
   # 构建作业：按配置类型顺序编译
   build:
     needs: setup  # 依赖setup作业获取设备列表
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       matrix:
         # 按配置类型优先级排序（关键优化）
@@ -355,7 +355,7 @@ jobs:
   # 发布作业：创建Release
   release:
     needs: [setup, build]  # 依赖setup和build作业
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     # 只在定时触发或手动触发时运行
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
 
