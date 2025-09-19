@@ -13,21 +13,12 @@ env:
 
 # 作业定义
 jobs:
-  # 构建作业：直接定义矩阵
-  build:
+  # 设置作业：仅动态获取设备列表
+  setup:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # 按配置类型优先级排序（关键优化）
-        config: ["Ultra", "Max", "Pro"]
-        repo: 
-          - { url: "https://github.com/laipeng668/immortalwrt.git", branch: "master", short: "immwrt" }
-          - { url: "https://github.com/laipeng668/openwrt.git", branch: "master", short: "openwrt" }
-          - { url: "https://github.com/laipeng668/openwrt-6.x.git", branch: "k6.12-nss", short: "libwrt" }
-        device: ["jdcloud_re-ss-01", "jdcloud_re-cs-02"]
-      max-parallel: 6  # 最大并行数
-      fail-fast: false  # 不快速失败
-
+    outputs:
+      devices: ${{ steps.get-devices.outputs.devices }}  # 输出设备列表
+    
     steps:
     # 检出代码
     - name: 检出代码
@@ -40,6 +31,58 @@ jobs:
       run: |
         chmod +x scripts/*.sh
         echo "已为所有脚本文件添加执行权限"
+
+    # 从配置文件中获取设备列表（关键步骤）
+    - name: 获取设备列表
+      id: get-devices
+      run: |
+        echo "===== 从配置文件获取设备列表 ====="
+        
+        # 检查基础配置文件是否存在
+        if [ ! -f "configs/${{ env.CHIP }}_base.config" ]; then
+          echo "错误: 配置文件 configs/${{ env.CHIP }}_base.config 不存在!"
+          echo "devices=[]" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
+        # 执行脚本获取设备列表
+        echo "正在解析配置文件中的设备名称..."
+        DEVICES=$(./scripts/get-devices.sh configs/${{ env.CHIP }}_base.config)
+        
+        # 检查脚本执行结果
+        if [ $? -ne 0 ] || [ -z "$DEVICES" ]; then
+          echo "警告: 无法从配置文件获取设备列表，使用默认设备"
+          DEVICES='["jdcloud_re-ss-01","jdcloud_re-cs-02"]'
+        fi
+        
+        # 输出设备列表
+        echo "devices=$DEVICES" >> $GITHUB_OUTPUT
+        echo "检测到的设备列表: $DEVICES"
+        echo "================================"
+
+  # 构建作业：按配置类型顺序编译
+  build:
+    needs: setup  # 依赖setup作业获取设备列表
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 按配置类型优先级排序（关键优化）
+        config: ["Ultra", "Max", "Pro"]
+        repo: 
+          - { url: "https://github.com/laipeng668/immortalwrt.git", branch: "master", short: "immwrt" }
+          - { url: "https://github.com/laipeng668/openwrt.git", branch: "master", short: "openwrt" }
+          - { url: "https://github.com/laipeng668/openwrt-6.x.git", branch: "k6.12-nss", short: "libwrt" }
+        # 从setup作业动态获取设备列表
+        device: ${{ fromJson(needs.setup.outputs.devices) }}
+      max-parallel: 6  # 最大并行数
+      fail-fast: false  # 不快速失败
+
+    steps:
+    # 检出代码
+    - name: 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     # 显示初始磁盘空间
     - name: 显示初始磁盘空间
@@ -110,6 +153,12 @@ jobs:
     - name: 缓存源码包
       id: cache-dl
       uses: actions/cache@v4
+      with:
+        path: dl/
+        key: ${{ runner.os }}-dl-${{ matrix.repo.short }}-${{ env.CHIP }}-${{ hashFiles('feeds.conf', 'include/*') }}
+        restore-keys: |
+          ${{ runner.os }}-dl-${{ matrix.repo.short }}-${{ env.CHIP }}-
+
     # 缓存工具链
     - name: 缓存工具链
       id: cache-staging
@@ -238,7 +287,7 @@ jobs:
 
   # 发布作业：创建Release
   release:
-    needs: build  # 简化依赖关系
+    needs: [setup, build]  # 依赖setup和build作业
     runs-on: ubuntu-latest
     # 只在定时触发或手动触发时运行
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
