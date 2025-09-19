@@ -8,14 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  REPO_LIST: |
-    [
-      {"url": "https://github.com/laipeng668/immortalwrt.git", "branch": "master", "short": "immwrt"},
-      {"url": "https://github.com/laipeng668/openwrt.git", "branch": "master", "short": "openwrt"},
-      {"url": "https://github.com/laipeng668/openwrt-6.x.git", "branch": "k6.12-nss", "short": "libwrt"}
-    ]
   CHIP: ipq60xx
-  CONFIGS: Pro Max Ultra
 
 jobs:
   setup:
@@ -41,8 +34,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        repo: ${{ fromJson(env.REPO_LIST) }}
-        config: ${{ fromJson('["Pro", "Max", "Ultra"]') }}
+        repo:
+          - { url: "https://github.com/laipeng668/immortalwrt.git", branch: "master", short: "immwrt" }
+          - { url: "https://github.com/laipeng668/openwrt.git", branch: "master", short: "openwrt" }
+          - { url: "https://github.com/laipeng668/openwrt-6.x.git", branch: "k6.12-nss", short: "libwrt" }
+        config: ["Pro", "Max", "Ultra"]
         device: ${{ fromJson(needs.setup.outputs.devices) }}
       max-parallel: 4
       fail-fast: false
