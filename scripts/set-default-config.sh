@@ -25,10 +25,10 @@ if [ -f "$OPENWRT_DIR/package/kernel/mac80211/files/lib/wifi/mac80211.sh" ]; the
     sed -i 's/encryption=psk.*/encryption=none/g' "$OPENWRT_DIR/package/kernel/mac80211/files/lib/wifi/mac80211.sh"
 fi
 
-# 设置默认无线SSID
-echo "设置默认无线SSID为: OpenWrt"
-if [ -f "$OPENWRT_DIR/package/kernel/mac80211/files/lib/wifi/mac80211.sh" ]; then
-    sed -i 's/ssid=.*/ssid=OpenWrt/g' "$OPENWRT_DIR/package/kernel/mac80211/files/lib/wifi/mac80211.sh"
-fi
+# # 设置默认无线SSID
+# echo "设置默认无线SSID为: OpenWrt"
+# if [ -f "$OPENWRT_DIR/package/kernel/mac80211/files/lib/wifi/mac80211.sh" ]; then
+#     sed -i 's/ssid=.*/ssid=OpenWrt/g' "$OPENWRT_DIR/package/kernel/mac80211/files/lib/wifi/mac80211.sh"
+# fi
 
 echo "默认配置设置完成"
