@@ -14,7 +14,10 @@ fi
 # 我们需要提取 jdcloud_re-ss-01 部分
 devices=$(grep "^CONFIG_TARGET_DEVICE_.*_DEVICE_.*=y$" "$CONFIG_FILE" | \
           sed -E 's/^CONFIG_TARGET_DEVICE_[^_]+_[^_]+_DEVICE_([^=]+)=y$/\1/' | \
-          sort -u)
+          sort -u | tr '\n' ' ')
+
+# 去除末尾空格
+devices=$(echo "$devices" | sed 's/ *$//')
 
 # 检查是否找到设备
 if [ -z "$devices" ]; then
@@ -24,7 +27,5 @@ if [ -z "$devices" ]; then
 fi
 
 # 将设备列表转换为JSON数组格式
-json_devices=$(echo "$devices" | jq -R . | jq -s .)
-
-# 输出JSON格式的设备列表
-echo "$json_devices"
+# 使用printf确保没有多余的空格和换行
+printf '["%s"]' $(echo "$devices" | sed 's/ /","/g')
