@@ -222,18 +222,18 @@ jobs:
         cd openwrt
         echo "REPO_SHORT=${{ matrix.repo.short }}" >> $GITHUB_ENV
 
-    # 替换原来的软件源管理步骤
+    # 添加管理第三方软件源
     - name: 管理第三方软件源
-    run: |
-     echo "===== 管理第三方软件源 ====="
-    # 验证脚本权限
-    if [ ! -x "scripts/manage-feeds.sh" ]; then
-      echo "警告: manage-feeds.sh 脚本没有执行权限，重新设置..."
-      chmod +x scripts/manage-feeds.sh
-    fi
-    ./scripts/manage-feeds.sh openwrt
-    echo "第三方软件源管理完成"
-    echo "========================="
+      run: |
+       echo "===== 管理第三方软件源 ====="
+       # 验证脚本权限
+       if [ ! -x "scripts/manage-feeds.sh" ]; then
+        echo "警告: manage-feeds.sh 脚本没有执行权限，重新设置..."
+        chmod +x scripts/manage-feeds.sh
+       fi
+       ./scripts/manage-feeds.sh openwrt
+       echo "第三方软件源管理完成"
+       echo "========================="
 
     # 设置默认配置（带权限检查）
     - name: 设置默认配置
