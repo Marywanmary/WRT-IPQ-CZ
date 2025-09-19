@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# 合并OpenWrt配置文件
+# 合并优先级：软件包配置 > 分支配置 > 芯片配置
+# 用法: ./merge-configs.sh <repo_short> <config_type> <device> <chip>
+
 REPO_SHORT=$1
 CONFIG_TYPE=$2
 DEVICE=$3
