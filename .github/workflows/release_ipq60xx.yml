@@ -15,7 +15,7 @@ env:
 jobs:
   # 设置作业：仅动态获取设备列表
   setup:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       devices: ${{ steps.get-devices.outputs.devices }}  # 输出设备列表
     
