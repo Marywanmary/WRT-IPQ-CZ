@@ -1,30 +1,33 @@
 name: IPQ60XX Build
 
+# 工作流触发条件
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
+  workflow_dispatch:  # 手动触发
   schedule:
     # 北京时间每周五0点（UTC时间每周四16:00）
     - cron: '0 16 * * 4'
 
+# 环境变量设置
 env:
-  CHIP: ipq60xx
+  CHIP: ipq60xx  # 芯片架构变量
 
+# 作业定义
 jobs:
+  # 设置作业：从配置文件中获取设备列表
   setup:
     runs-on: ubuntu-latest
     outputs:
-      devices: ${{ steps.get-devices.outputs.devices }}
+      devices: ${{ steps.get-devices.outputs.devices }}  # 输出设备列表
+    
     steps:
-    - name: Checkout
+    # 检出代码
+    - name: 检出代码
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
-    - name: Check Script Existence
+    # 检查脚本文件是否存在并设置执行权限
+    - name: 检查脚本文件
       run: |
         if [ ! -f "scripts/get-devices.sh" ]; then
           echo "Error: scripts/get-devices.sh not found!"
@@ -32,53 +35,67 @@ jobs:
         fi
         chmod +x scripts/get-devices.sh
 
-    - name: Get Devices from Config
+    # 从配置文件中获取设备列表
+    - name: 获取设备列表
       id: get-devices
       run: |
+        # 检查基础配置文件是否存在
         if [ ! -f "configs/${{ env.CHIP }}_base.config" ]; then
           echo "Error: configs/${{ env.CHIP }}_base.config not found!"
           echo "devices=[]" >> $GITHUB_OUTPUT
           exit 1
         fi
         
+        # 执行脚本获取设备列表
         DEVICES=$(./scripts/get-devices.sh configs/${{ env.CHIP }}_base.config)
+        
+        # 检查脚本执行结果
         if [ $? -ne 0 ]; then
           echo "Warning: get-devices.sh failed, using default devices"
-          DEVICES='["jdcloud_re-ss-01", "jdcloud_re-cs-02"]'
+          DEVICES='["jdcloud_re-ss-01","jdcloud_re-cs-02"]'
         fi
         
+        # 输出设备列表
         echo "devices=$DEVICES" >> $GITHUB_OUTPUT
         echo "Found devices: $DEVICES"
 
+  # 构建作业：编译固件
   build:
-    needs: setup
+    needs: setup  # 依赖setup作业
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        # 仓库列表
         repo:
           - { url: "https://github.com/laipeng668/immortalwrt.git", branch: "master", short: "immwrt" }
           - { url: "https://github.com/laipeng668/openwrt.git", branch: "master", short: "openwrt" }
           - { url: "https://github.com/laipeng668/openwrt-6.x.git", branch: "k6.12-nss", short: "libwrt" }
+        # 配置类型列表
         config: ["Pro", "Max", "Ultra"]
+        # 设备列表（从setup作业获取）
         device: ${{ fromJson(needs.setup.outputs.devices) }}
-      max-parallel: 4
-      fail-fast: false
+      max-parallel: 4  # 最大并行数
+      fail-fast: false  # 不快速失败
 
     steps:
-    - name: Free Disk Space
+    # 释放磁盘空间
+    - name: 释放磁盘空间
       uses: sbwml/actions@free-disk
 
-    - name: Checkout
+    # 检出代码
+    - name: 检出代码
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
-    - name: Setup Environment
+    # 安装编译环境
+    - name: 安装编译环境
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget ccache xz-utils python3-distutils python3-pyelftools jq
 
-    - name: Cache Configuration
+    # 缓存配置文件
+    - name: 缓存配置文件
       id: cache-config
       uses: actions/cache@v4
       with:
@@ -87,7 +104,8 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-config-${{ env.CHIP }}-
 
-    - name: Cache Source Packages
+    # 缓存源码包
+    - name: 缓存源码包
       id: cache-dl
       uses: actions/cache@v4
       with:
@@ -96,7 +114,8 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-dl-${{ matrix.repo.short }}-${{ env.CHIP }}-
 
-    - name: Cache Toolchain
+    # 缓存工具链
+    - name: 缓存工具链
       id: cache-staging
       uses: actions/cache@v4
       with:
@@ -105,7 +124,8 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-staging-${{ matrix.repo.short }}-${{ env.CHIP }}-${{ matrix.device }}-
 
-    - name: Cache CCACHE
+    # 缓存编译缓存
+    - name: 缓存编译缓存
       id: cache-ccache
       uses: actions/cache@v4
       with:
@@ -114,35 +134,41 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-ccache-${{ matrix.repo.short }}-${{ env.CHIP }}-${{ matrix.device }}-
 
-    - name: Clone OpenWrt Repository
+    # 克隆OpenWrt仓库
+    - name: 克隆OpenWrt仓库
       run: |
         git clone --depth 1 --branch ${{ matrix.repo.branch }} ${{ matrix.repo.url }} openwrt
         cd openwrt
         echo "REPO_SHORT=${{ matrix.repo.short }}" >> $GITHUB_ENV
 
-    - name: Add Custom Feeds
+    # 添加第三方软件源
+    - name: 添加第三方软件源
       run: |
         chmod +x scripts/add-custom-feeds.sh
         ./scripts/add-custom-feeds.sh openwrt
 
-    - name: Merge Configurations
+    # 合并配置文件
+    - name: 合并配置文件
       run: |
         chmod +x scripts/merge-configs.sh
         ./scripts/merge-configs.sh ${{ matrix.repo.short }} ${{ matrix.config }} ${{ matrix.device }} ${{ env.CHIP }}
 
-    - name: Update Feeds
+    # 更新软件源
+    - name: 更新软件源
       run: |
         cd openwrt
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Generate Configuration
+    # 生成配置文件
+    - name: 生成配置文件
       run: |
         cd openwrt
         cp ../.config .config
         make defconfig
 
-    - name: Build Firmware
+    # 编译固件
+    - name: 编译固件
       run: |
         cd openwrt
         echo -e "$(nproc) thread build"
@@ -152,12 +178,14 @@ jobs:
           exit 1
         fi
 
-    - name: Prepare Artifacts
+    # 准备构建产物
+    - name: 准备构建产物
       run: |
         chmod +x scripts/rename-firmware.sh
         ./scripts/rename-firmware.sh ${{ matrix.repo.short }} ${{ matrix.config }} ${{ matrix.device }} ${{ env.CHIP }}
 
-    - name: Upload Build Logs
+    # 上传构建日志
+    - name: 上传构建日志
       if: always()
       uses: actions/upload-artifact@v4
       with:
@@ -167,28 +195,34 @@ jobs:
           build-error.log
         retention-days: 7
 
-    - name: Upload Artifacts
+    # 上传构建产物
+    - name: 上传构建产物
       uses: actions/upload-artifact@v4
       with:
         name: firmware-${{ matrix.repo.short }}-${{ matrix.config }}-${{ matrix.device }}-${{ env.CHIP }}
         path: artifacts/
         retention-days: 7
 
+  # 发布作业：创建Release
   release:
-    needs: [setup, build]
+    needs: [setup, build]  # 依赖setup和build作业
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'schedule'
+    # 只在定时触发或手动触发时运行
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
 
     steps:
-    - name: Checkout
+    # 检出代码
+    - name: 检出代码
       uses: actions/checkout@v4
 
-    - name: Download All Artifacts
+    # 下载所有构建产物
+    - name: 下载所有构建产物
       uses: actions/download-artifact@v4
       with:
         path: artifacts/
 
-    - name: Prepare Release
+    # 准备发布文件
+    - name: 准备发布文件
       run: |
         mkdir -p release
         # 合并所有固件和配置文件
@@ -207,7 +241,8 @@ jobs:
         chmod +x scripts/generate-release-notes.sh
         ./scripts/generate-release-notes.sh ${{ env.CHIP }} > release/RELEASE_NOTES.md
 
-    - name: Create Release
+    # 创建Release
+    - name: 创建Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: $(date +%Y%m%d)-${{ env.CHIP }}
