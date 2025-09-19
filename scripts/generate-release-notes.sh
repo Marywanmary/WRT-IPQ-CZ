@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# 生成发布说明
+# 用法: ./generate-release-notes.sh <chip>
+
 CHIP=$1
 
 # 获取当前日期
@@ -36,6 +39,10 @@ cat << EOF
 - Lucky: https://github.com/gdy666/luci-app-lucky
 - Momo: https://github.com/nikkinikki-org/OpenWrt-momo
 - Small Package: https://github.com/kenzok8/small-package (优先级最低)
+
+## 编译优化
+- 编译顺序：Ultra -> Max -> Pro（优化缓存命中率）
+- Ultra配置包含最多软件包，为后续编译提供完整缓存
 
 ## 编译的Luci应用
 $(for app in $LUCI_APPS; do echo "- $app"; done)
