@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# 添加第三方软件源到OpenWrt的feeds.conf文件
+# 软件源按优先级从高到低添加，后添加的会覆盖先添加的同名包
+
 OPENWRT_DIR=$1
 
 # 检查OpenWrt目录是否存在
