@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# 重命名固件文件并准备构建产物
+# 用法: ./rename-firmware.sh <repo_short> <config_type> <device> <chip>
+
 REPO_SHORT=$1
 CONFIG_TYPE=$2
 DEVICE=$3
