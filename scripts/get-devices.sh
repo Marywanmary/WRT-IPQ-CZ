@@ -5,6 +5,7 @@ CONFIG_FILE=$1
 # 检查配置文件是否存在
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "Error: Config file $CONFIG_FILE not found!"
+    echo "[]"  # 输出空JSON数组
     exit 1
 fi
 
@@ -14,6 +15,13 @@ fi
 devices=$(grep "^CONFIG_TARGET_DEVICE_.*_DEVICE_.*=y$" "$CONFIG_FILE" | \
           sed -E 's/^CONFIG_TARGET_DEVICE_[^_]+_[^_]+_DEVICE_([^=]+)=y$/\1/' | \
           sort -u)
+
+# 检查是否找到设备
+if [ -z "$devices" ]; then
+    echo "Warning: No devices found in config file $CONFIG_FILE"
+    echo "[]"  # 输出空JSON数组
+    exit 0
+fi
 
 # 将设备列表转换为JSON数组格式
 json_devices=$(echo "$devices" | jq -R . | jq -s .)
