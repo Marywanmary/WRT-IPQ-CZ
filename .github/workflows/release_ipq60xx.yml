@@ -26,14 +26,11 @@ jobs:
       with:
         fetch-depth: 0
 
-    # 检查脚本文件是否存在并设置执行权限
-    - name: 检查脚本文件
+    # 给所有脚本文件添加执行权限
+    - name: 设置脚本权限
       run: |
-        if [ ! -f "scripts/get-devices.sh" ]; then
-          echo "Error: scripts/get-devices.sh not found!"
-          exit 1
-        fi
-        chmod +x scripts/get-devices.sh
+        chmod +x scripts/*.sh
+        echo "已为所有脚本文件添加执行权限"
 
     # 从配置文件中获取设备列表
     - name: 获取设备列表
@@ -70,8 +67,8 @@ jobs:
           - { url: "https://github.com/laipeng668/immortalwrt.git", branch: "master", short: "immwrt" }
           - { url: "https://github.com/laipeng668/openwrt.git", branch: "master", short: "openwrt" }
           - { url: "https://github.com/laipeng668/openwrt-6.x.git", branch: "k6.12-nss", short: "libwrt" }
-        # 配置类型列表
-        config: ["Pro", "Max", "Ultra"]
+        # 配置类型列表（按缓存命中率从高到低排序）
+        config: ["Ultra", "Max", "Pro"]
         # 设备列表（从setup作业获取）
         device: ${{ fromJson(needs.setup.outputs.devices) }}
       max-parallel: 4  # 最大并行数
@@ -144,13 +141,11 @@ jobs:
     # 添加第三方软件源
     - name: 添加第三方软件源
       run: |
-        chmod +x scripts/add-custom-feeds.sh
         ./scripts/add-custom-feeds.sh openwrt
 
     # 合并配置文件
     - name: 合并配置文件
       run: |
-        chmod +x scripts/merge-configs.sh
         ./scripts/merge-configs.sh ${{ matrix.repo.short }} ${{ matrix.config }} ${{ matrix.device }} ${{ env.CHIP }}
 
     # 更新软件源
@@ -181,7 +176,6 @@ jobs:
     # 准备构建产物
     - name: 准备构建产物
       run: |
-        chmod +x scripts/rename-firmware.sh
         ./scripts/rename-firmware.sh ${{ matrix.repo.short }} ${{ matrix.config }} ${{ matrix.device }} ${{ env.CHIP }}
 
     # 上传构建日志
@@ -215,6 +209,12 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v4
 
+    # 给所有脚本文件添加执行权限
+    - name: 设置脚本权限
+      run: |
+        chmod +x scripts/*.sh
+        echo "已为所有脚本文件添加执行权限"
+
     # 下载所有构建产物
     - name: 下载所有构建产物
       uses: actions/download-artifact@v4
@@ -238,7 +238,6 @@ jobs:
         # 合并所有软件包
         tar -czf release/${{ env.CHIP }}-app.tar.gz -C release ${{ env.CHIP }}-app/ 2>/dev/null || true
         # 生成发布说明
-        chmod +x scripts/generate-release-notes.sh
         ./scripts/generate-release-notes.sh ${{ env.CHIP }} > release/RELEASE_NOTES.md
 
     # 创建Release
