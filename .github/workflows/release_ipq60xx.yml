@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+  schedule:
+    # 北京时间每周五0点（UTC时间每周四16:00）
+    - cron: '0 16 * * 4'
 
 env:
   CHIP: ipq60xx
@@ -21,11 +24,29 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Check Script Existence
+      run: |
+        if [ ! -f "scripts/get-devices.sh" ]; then
+          echo "Error: scripts/get-devices.sh not found!"
+          exit 1
+        fi
+        chmod +x scripts/get-devices.sh
+
     - name: Get Devices from Config
       id: get-devices
       run: |
-        chmod +x scripts/get-devices.sh
+        if [ ! -f "configs/${{ env.CHIP }}_base.config" ]; then
+          echo "Error: configs/${{ env.CHIP }}_base.config not found!"
+          echo "devices=[]" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
         DEVICES=$(./scripts/get-devices.sh configs/${{ env.CHIP }}_base.config)
+        if [ $? -ne 0 ]; then
+          echo "Warning: get-devices.sh failed, using default devices"
+          DEVICES='["jdcloud_re-ss-01", "jdcloud_re-cs-02"]'
+        fi
+        
         echo "devices=$DEVICES" >> $GITHUB_OUTPUT
         echo "Found devices: $DEVICES"
 
@@ -55,7 +76,7 @@ jobs:
     - name: Setup Environment
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget ccache xz-utils python3-distutils python3-pyelftools
+        sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget ccache xz-utils python3-distutils python3-pyelftools jq
 
     - name: Cache Configuration
       id: cache-config
@@ -156,7 +177,7 @@ jobs:
   release:
     needs: [setup, build]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'schedule'
 
     steps:
     - name: Checkout
