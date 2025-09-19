@@ -15,7 +15,7 @@ env:
 jobs:
   # 设置作业：从配置文件中获取设备列表
   setup:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     outputs:
       devices: ${{ steps.get-devices.outputs.devices }}  # 输出设备列表
     
@@ -59,7 +59,7 @@ jobs:
   # 构建作业：编译固件
   build:
     needs: setup  # 依赖setup作业
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         # 仓库列表
@@ -71,29 +71,73 @@ jobs:
         config: ["Ultra", "Max", "Pro"]
         # 设备列表（从setup作业获取）
         device: ${{ fromJson(needs.setup.outputs.devices) }}
-      max-parallel: 6  # 最大并行数
+      max-parallel: 4  # 最大并行数
       fail-fast: false  # 不快速失败
 
     steps:
-    # 释放磁盘空间
-    - name: 释放磁盘空间
-      uses: sbwml/actions@free-disk
-
     # 检出代码
     - name: 检出代码
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
+    # 显示初始磁盘空间
+    - name: 显示初始磁盘空间
+      run: |
+        echo "===== 初始磁盘空间 ====="
+        df -h
+        echo "========================="
+
+    # 释放磁盘空间（使用推荐的Action）
+    - name: 释放磁盘空间
+      uses: jlumbroso/free-disk-space@main
+      with:
+        # 清理工具缓存（包括.NET、Node.js、Python等）
+        tool-cache: true
+        # 清理Android SDK
+        android: true
+        # 清理.NET SDK
+        dotnet: true
+        # 清理Haskell
+        haskell: true
+        # 清理大包（如Azure CLI、PowerShell等）
+        large-packages: true
+        # 清理交换空间
+        swap-storage: true
+        # 清理Docker镜像（如果有）
+        docker-images: true
+        # 清理GitHub Actions缓存
+        github-packages: true
+
+    # 显示清理后的磁盘空间
+    - name: 显示清理后的磁盘空间
+      run: |
+        echo "===== 清理后的磁盘空间 ====="
+        df -h
+        echo "============================="
+
     # 安装编译环境
     - name: 安装编译环境
-      env:
-        DEBIAN_FRONTEND: noninteractive
       run: |
-        sudo -E apt-get -y update
-        sudo -E apt-get -y install $(curl -fsSL is.gd/depends_ubuntu_2204)
-        sudo -E systemctl daemon-reload
-        sudo timedatectl set-timezone "$TZ"
+        sudo apt-get update
+        sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget ccache xz-utils python3-distutils python3-pyelftools jq
+
+    # 显示编译前系统信息
+    - name: 显示编译前系统信息
+      run: |
+        echo "===== 编译前系统信息 ====="
+        echo "## CPU信息 ##"
+        lscpu | grep -E "(Model name|Architecture|CPU\(s\)|Thread|Core)"
+        echo ""
+        echo "## 内存信息 ##"
+        free -h
+        echo ""
+        echo "## 磁盘空间信息 ##"
+        df -h
+        echo ""
+        echo "## 系统负载信息 ##"
+        uptime
+        echo "========================="
 
     # 缓存配置文件
     - name: 缓存配置文件
@@ -172,10 +216,42 @@ jobs:
         cd openwrt
         echo -e "$(nproc) thread build"
         make -j$(nproc) V=s || echo "Build failed with exit code $?" > ../build-error.log
-        if [ -f ../build-error.log ]; then
+        if [ -f "../build-error.log" ]; then
           cat ../build-error.log
           exit 1
         fi
+
+    # 显示编译后系统信息
+    - name: 显示编译后系统信息
+      if: always()
+      run: |
+        echo "===== 编译后系统信息 ====="
+        echo "## CPU信息 ##"
+        lscpu | grep -E "(Model name|Architecture|CPU\(s\)|Thread|Core)"
+        echo ""
+        echo "## 内存信息 ##"
+        free -h
+        echo ""
+        echo "## 磁盘空间信息 ##"
+        df -h
+        echo ""
+        echo "## 系统负载信息 ##"
+        uptime
+        echo ""
+        echo "## 编译目录大小 ##"
+        if [ -d "openwrt" ]; then
+          echo "OpenWrt目录大小: $(du -sh openwrt | cut -f1)"
+        fi
+        if [ -d "dl" ]; then
+          echo "dl目录大小: $(du -sh dl | cut -f1)"
+        fi
+        if [ -d "staging_dir" ]; then
+          echo "staging_dir目录大小: $(du -sh staging_dir | cut -f1)"
+        fi
+        if [ -d ".ccache" ]; then
+          echo ".ccache目录大小: $(du -sh .ccache | cut -f1)"
+        fi
+        echo "========================="
 
     # 准备构建产物
     - name: 准备构建产物
