@@ -62,5 +62,4 @@ git clone --depth=1 https://github.com/vernesong/OpenClash package/OpenClash
 git clone --depth=1 https://github.com/kenzok8/small-package package/small8
 
 # feeds更新与安装
-./scripts/feeds update -a
-./scripts/feeds install -a
+[ -x ./scripts/feeds ] && ./scripts/feeds update -a && ./scripts/feeds install -a
