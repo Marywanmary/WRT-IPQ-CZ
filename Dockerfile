@@ -20,9 +20,11 @@ RUN apt-get update && apt-get install -y \
     libncurses5-dev \
     libssl-dev \
     python3 \
+    python3-distutils \
     unzip \
     wget \
     xz-utils \
+    rsync \
     && rm -rf /var/lib/apt/lists/*
 
 # 创建工作目录
