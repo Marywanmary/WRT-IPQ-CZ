@@ -21,6 +21,9 @@ echo "检查OpenWrt核心结构..."
 # 1.1 检查是否存在include目录
 if [ ! -d "include" ]; then
     echo "错误: include目录不存在，可能不是有效的OpenWrt源码目录"
+    echo "当前目录: $(pwd)"
+    echo "目录内容:"
+    ls -la
     exit 1
 fi
 
@@ -28,6 +31,9 @@ fi
 for file in include/rules.mk include/target.mk include/host.mk; do
     if [ ! -f "$file" ]; then
         echo "错误: $file不存在，可能不是有效的OpenWrt源码目录"
+        echo "当前目录: $(pwd)"
+        echo "include目录内容:"
+        ls -la include/
         exit 1
     fi
 done
