@@ -49,26 +49,263 @@ env:
   DOCKER_IMAGE: "openwrt-builder:${{ github.event.inputs.chip_arch || 'ipq60xx' }}-${{ github.event.inputs.ubuntu_version || '22.04' }}"
 
 jobs:
-  # 设置构建矩阵
-  setup-matrix:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-      - name: 生成构建矩阵
-        id: set-matrix
-        run: |
-          # 按照分支优先级排序，先完成一个分支的所有配置
-          echo "matrix={\"branch\":[\"openwrt\",\"immortalwrt\",\"libwrt\"],\"config\":[\"Ultra\",\"Max\",\"Pro\"]}" >> $GITHUB_OUTPUT
-
-
-  # 编译任务
-  build:
-    needs: setup-matrix
+  # 第一阶段：编译所有分支的Ultra配置
+  build-ultra:
     runs-on: ubuntu-latest
     strategy:
-      matrix: ${{ fromJson(needs.setup-matrix.outputs.matrix) }}
-      max-parallel: 3 # 分支级并行
+      matrix:
+        branch: [openwrt, immortalwrt, libwrt]
+        config: [Ultra]
+      max-parallel: 3 # 3个分支并行
+    timeout-minutes: 360 # 6小时超时
+
+    steps:
+      - name: 释放磁盘空间
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - name: 超级磁盘清理
+        run: |
+          # 系统清理
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          sudo docker system prune -af --volumes
+          sudo apt-get clean
+          
+          # GitHub Actions缓存清理
+          sudo rm -rf $HOME/.cache/pip $HOME/.cargo/registry
+          
+          # 创建交换空间
+          sudo fallocate -l 10G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          
+          # 显示磁盘信息
+          df -h
+
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          path: openwrt-build
+
+      - name: 设置Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建并缓存Docker镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: ./openwrt-build
+          file: ./openwrt-build/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.DOCKER_IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            CHIP_ARCH=${{ env.CHIP_ARCH }}
+            UBUNTU_VERSION=${{ env.UBUNTU_VERSION }}
+
+      - name: 恢复工具链缓存
+        uses: actions/cache@v3
+        with:
+          path: |
+            openwrt-build/staging_dir/
+            openwrt-build/build_dir/toolchain
+          key: toolchain-${{ runner.os }}-${{ env.CHIP_ARCH }}-${{ env.UBUNTU_VERSION }}
+          restore-keys: |
+            toolchain-${{ runner.os }}-${{ env.CHIP_ARCH }}-
+            toolchain-${{ runner.os }}-
+
+      - name: 恢复依赖包缓存
+        uses: actions/cache@v3
+        with:
+          path: |
+            openwrt-build/dl/
+            openwrt-build/feeds/
+          key: deps-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-${{ hashFiles('openwrt-build/feeds.conf.default', 'openwrt-build/feeds.conf') }}
+          restore-keys: |
+            deps-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-
+            deps-${{ matrix.branch }}-
+
+      - name: 恢复内核缓存
+        uses: actions/cache@v3
+        with:
+          path: openwrt-build/build_dir/target-*/linux-*/
+          key: kernel-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-${{ hashFiles('openwrt-build/target/linux/generic/config-*', 'openwrt-build/target/linux/${{ env.CHIP_ARCH }}/config-*') }}
+          restore-keys: |
+            kernel-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-
+            kernel-${{ matrix.branch }}-
+
+      - name: 恢复基础系统缓存
+        uses: actions/cache@v3
+        with:
+          path: |
+            openwrt-build/build_dir/target-*/root-*/
+            openwrt-build/staging_dir/target-*/
+          key: base-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-${{ env.BASE_VERSION }}
+          restore-keys: |
+            base-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-
+            base-${{ matrix.branch }}-
+
+      - name: 恢复软件包缓存
+        uses: actions/cache@v3
+        with:
+          path: openwrt-build/bin/packages/
+          key: packages-${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}
+          restore-keys: |
+            packages-${{ matrix.branch }}-${{ matrix.config }}-
+            packages-${{ matrix.branch }}-
+
+      - name: 在Docker中编译
+        run: |
+          # 确保宿主机脚本有执行权限
+          chmod +x openwrt-build/scripts/build-cz.sh
+          chmod +x openwrt-build/scripts/script-cz.sh
+          
+          docker run --rm \
+            -v ${{ github.workspace }}/openwrt-build:/openwrt \
+            -e CHIP_ARCH=${{ env.CHIP_ARCH }} \
+            -e CONFIG_PROFILE=${{ matrix.config }} \
+            -e BRANCH_NAME=${{ matrix.branch }} \
+            -e BASE_VERSION=${{ env.BASE_VERSION }} \
+            ${{ env.DOCKER_IMAGE }} \
+            /bin/bash -c "
+              cd /openwrt
+              # 确保容器内脚本有执行权限
+              chmod +x scripts/build-cz.sh
+              chmod +x scripts/script-cz.sh
+              scripts/build-cz.sh 2>&1 | tee build.log
+            "
+
+      - name: 检查编译状态
+        if: always()
+        run: |
+          if [ -f openwrt-build/build.log ]; then
+            echo "编译日志:"
+            tail -n 100 openwrt-build/build.log
+            if grep -q "ERROR\|Error\|FATAL" openwrt-build/build.log; then
+              echo "编译失败，发现错误"
+              exit 1
+            fi
+          fi
+
+      - name: 保存缓存
+        if: always()
+        uses: actions/cache/save@v3
+        with:
+          path: |
+            openwrt-build/staging_dir/
+            openwrt-build/build_dir/toolchain
+            openwrt-build/dl/
+            openwrt-build/feeds/
+            openwrt-build/build_dir/target-*/linux-*/
+            openwrt-build/build_dir/target-*/root-*/
+            openwrt-build/staging_dir/target-*/
+            openwrt-build/bin/packages/
+          key: ${{ runner.os }}-${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}-${{ github.run_number }}
+
+      - name: 处理编译产物
+        run: |
+          cd openwrt-build
+          
+          # 创建临时目录
+          mkdir -p artifacts/firmware artifacts/config artifacts/logs artifacts/packages
+          
+          # 处理固件文件
+          for firmware in bin/targets/*/*/*.bin; do
+            if [ -f "$firmware" ]; then
+              # 提取设备名称
+              device_name=$(echo "$firmware" | grep -oP '(?<=qualcommax-ipq60xx-)[^/]+(?=-)')
+              # 提取固件类型 (factory/sysupgrade)
+              firmware_type=$(echo "$firmware" | grep -oP '(?<=-)[^/]+(?=\.bin)')
+              
+              # 根据分支获取缩写
+              case "${{ matrix.branch }}" in
+                "openwrt") branch_short="openwrt" ;;
+                "immortalwrt") branch_short="immwrt" ;;
+                "libwrt") branch_short="libwrt" ;;
+              esac
+              
+              # 重命名固件
+              new_name="${branch_short}-${{ env.CHIP_ARCH }}-${device_name}-${firmware_type}-${{ matrix.config }}.bin"
+              cp "$firmware" "artifacts/firmware/$new_name"
+            fi
+          done
+          
+          # 处理配置文件
+          for config_file in .config .config.buildinfo; do
+            if [ -f "$config_file" ]; then
+              # 提取设备名称
+              device_name=$(grep "CONFIG_TARGET_DEVICE_.*=y" .config | head -1 | sed 's/.*DEVICE_\(.*\)=y/\1/' | tr '[:upper:]' '[:lower:]')
+              
+              # 根据分支获取缩写
+              case "${{ matrix.branch }}" in
+                "openwrt") branch_short="openwrt" ;;
+                "immortalwrt") branch_short="immwrt" ;;
+                "libwrt") branch_short="libwrt" ;;
+              esac
+              
+              # 重命名配置文件
+              new_name="${branch_short}-${{ env.CHIP_ARCH }}-${device_name}-${{ matrix.config }}.${config_file#.config.}"
+              cp "$config_file" "artifacts/config/$new_name"
+            fi
+          done
+          
+          # 处理manifest文件
+          if [ -f "bin/targets/*/manifest" ]; then
+            # 提取设备名称
+            device_name=$(grep "CONFIG_TARGET_DEVICE_.*=y" .config | head -1 | sed 's/.*DEVICE_\(.*\)=y/\1/' | tr '[:upper:]' '[:lower:]')
+            
+            # 根据分支获取缩写
+            case "${{ matrix.branch }}" in
+              "openwrt") branch_short="openwrt" ;;
+              "immortalwrt") branch_short="immwrt" ;;
+              "libwrt") branch_short="libwrt" ;;
+            esac
+            
+            # 重命名manifest文件
+            new_name="${branch_short}-${{ env.CHIP_ARCH }}-${device_name}-${{ matrix.config }}.manifest"
+            cp "bin/targets/*/manifest" "artifacts/config/$new_name"
+          fi
+          
+          # 处理日志文件
+          cp build.log artifacts/logs/full.log
+          grep -E "ERROR|Error|FATAL|WARNING|Warning" build.log > artifacts/logs/errors.log || true
+          
+          # 处理软件包
+          if [ -d "bin/packages" ]; then
+            cp -r bin/packages/* artifacts/packages/ 2>/dev/null || true
+          fi
+          
+          # 打包产物
+          cd artifacts
+          tar -czf "${{ env.CHIP_ARCH }}-config.tar.gz" config/
+          tar -czf "${{ env.CHIP_ARCH }}-log.tar.gz" logs/
+          tar -czf "${{ env.CHIP_ARCH }}-app.tar.gz" packages/
+          cd ..
+
+      - name: 上传编译产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}
+          path: openwrt-build/artifacts/
+          retention-days: 7
+
+  # 第二阶段：编译所有分支的Max和Pro配置
+  build-others:
+    needs: build-ultra
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        branch: [openwrt, immortalwrt, libwrt]
+        config: [Max, Pro]
+      max-parallel: 3 # 3个分支并行
     timeout-minutes: 360 # 6小时超时
 
     steps:
@@ -311,7 +548,7 @@ jobs:
 
   # 发布任务
   release:
-    needs: build
+    needs: [build-ultra, build-others]
     runs-on: ubuntu-latest
     if: always()
     steps:
