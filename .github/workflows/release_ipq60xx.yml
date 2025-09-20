@@ -218,4 +218,322 @@ jobs:
     # 克隆OpenWrt仓库
     - name: 克隆OpenWrt仓库
       run: |
-        echo "===== 克隆OpenWrt仓库
+        echo "===== 克隆OpenWrt仓库 ====="
+        git clone --depth 1 --branch ${{ matrix.repo.branch }} ${{ matrix.repo.url }} openwrt
+        echo "当前目录: $(pwd)"
+        echo "目录内容:"
+        ls -la
+        echo "openwrt目录内容:"
+        ls -la openwrt/
+        cd openwrt
+        echo "切换到openwrt目录: $(pwd)"
+        echo "openwrt子目录:"
+        ls -la
+        echo "REPO_SHORT=${{ matrix.repo.short }}" >> $GITHUB_ENV
+        echo "===== OpenWrt仓库克隆完成 ====="
+
+    # 管理第三方软件源（关键步骤）
+    - name: 管理第三方软件源
+      run: |
+        echo "===== 管理第三方软件源 ====="
+        echo "当前工作目录: $(pwd)"
+        echo "目录内容:"
+        ls -la
+        
+        # 验证脚本权限
+        if [ ! -x "scripts/manage-feeds.sh" ]; then
+          echo "警告: manage-feeds.sh 脚本没有执行权限，重新设置..."
+          chmod +x scripts/manage-feeds.sh
+        fi
+        
+        # 检查openwrt目录是否存在
+        if [ ! -d "openwrt" ]; then
+          echo "错误: openwrt目录不存在"
+          exit 1
+        fi
+        
+        echo "openwrt目录内容:"
+        ls -la openwrt/
+        
+        # 在openwrt目录中执行脚本（不传递目录参数，让脚本自动检测）
+        echo "在openwrt目录中执行脚本..."
+        cd openwrt
+        echo "当前目录: $(pwd)"
+        echo "include目录存在: $(test -d include && echo '是' || echo '否')"
+        
+        if [ -d "include" ]; then
+          echo "include目录内容:"
+          ls -la include/
+        fi
+        
+        ../scripts/manage-feeds.sh
+        echo "第三方软件源管理完成"
+        echo "========================="
+
+    # 设置默认配置（带权限检查）
+    - name: 设置默认配置
+      run: |
+        echo "===== 设置默认配置 ====="
+        # 验证脚本权限
+        if [ ! -x "scripts/set-default-config.sh" ]; then
+          echo "警告: set-default-config.sh 脚本没有执行权限，重新设置..."
+          chmod +x scripts/set-default-config.sh
+        fi
+        ./scripts/set-default-config.sh openwrt
+        echo "默认配置设置完成"
+        echo "========================="
+
+    # 合并配置文件（带权限检查）
+    - name: 合并配置文件
+      run: |
+        echo "===== 合并配置文件 ====="
+        # 验证脚本权限
+        if [ ! -x "scripts/merge-configs.sh" ]; then
+          echo "警告: merge-configs.sh 脚本没有执行权限，重新设置..."
+          chmod +x scripts/merge-configs.sh
+        fi
+        ./scripts/merge-configs.sh ${{ matrix.repo.short }} ${{ matrix.config }} ${{ matrix.device }} ${{ env.CHIP }}
+        echo "配置文件合并完成"
+        echo "========================="
+
+    # 更新软件源
+    - name: 更新软件源
+      run: |
+        echo "===== 更新软件源 ====="
+        cd openwrt
+        echo "当前目录: $(pwd)"
+        echo "更新软件源..."
+        ./scripts/feeds update -a
+        echo "安装软件源..."
+        ./scripts/feeds install -a
+        echo "===== 软件源更新完成 ====="
+
+    # 生成配置文件
+    - name: 生成配置文件
+      run: |
+        echo "===== 生成配置文件 ====="
+        cd openwrt
+        echo "当前目录: $(pwd)"
+        echo "复制配置文件..."
+        cp ../.config .config
+        echo "生成配置..."
+        make defconfig
+        echo "===== 配置文件生成完成 ====="
+
+    # 检查编译环境（新增的步骤）
+    - name: 检查编译环境
+      run: |
+        echo "===== 检查编译环境 ====="
+        cd openwrt
+        echo "当前目录: $(pwd)"
+        
+        # 检查package/Makefile是否存在
+        if [ ! -f "package/Makefile" ]; then
+          echo "错误: package/Makefile不存在，尝试创建..."
+          
+          # 创建package/Makefile - 使用echo逐行写入
+          echo "# SPDX-License-Identifier: GPL-2.0-only" > package/Makefile
+          echo "#" >> package/Makefile
+          echo "# Copyright (C) 2006-2020 OpenWrt.org" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "include \$(TOPDIR)/rules.mk" >> package/Makefile
+          echo "include \$(INCLUDE_DIR)/target.mk" >> package/Makefile
+          echo "include \$(INCLUDE_DIR)/host.mk" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "-include \$(TOPDIR)/.config" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "prereq:" >> package/Makefile
+          echo "	\$(if \$(wildcard \$(TOPDIR)/tmp/.prereq-target),)" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp prereq-target" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp prereq-host" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp prereq-compile" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "prepare-tmpinfo:" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp info" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp target-info" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp package-info" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "package/%: prepare-tmpinfo" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp package-install" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "target/%: prepare-tmpinfo" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp target-install" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "tools/%: prepare-tmpinfo" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp tools-install" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "%::" >> package/Makefile
+          echo "	@\$(MESSAGE) \"No rule to make target \$@\"" >> package/Makefile
+          echo "	@exit 1" >> package/Makefile
+          echo "" >> package/Makefile
+          echo ".PHONY: prereq prepare-tmpinfo" >> package/Makefile
+          
+          echo "✓ 已创建package/Makefile"
+        else
+          echo "✓ package/Makefile存在"
+        fi
+        
+        # 检查其他必要文件
+        for file in include/rules.mk include/target.mk include/host.mk; do
+          if [ ! -f "$file" ]; then
+            echo "错误: $file不存在"
+            echo "当前目录: $(pwd)"
+            echo "目录内容:"
+            ls -la
+            exit 1
+          fi
+        done
+        
+        echo "✓ 所有必要文件都存在"
+        echo "===== 编译环境检查完成 ====="
+
+    # 编译固件
+    - name: 编译固件
+      run: |
+        echo "===== 编译固件 ====="
+        cd openwrt
+        echo "当前目录: $(pwd)"
+        echo "开始编译 ${{ matrix.config }} 配置..."
+        echo -e "$(nproc) thread build"
+        make -j$(nproc) V=s || echo "Build failed with exit code $?" > ../build-error.log
+        if [ -f "../build-error.log" ]; then
+          cat ../build-error.log
+          exit 1
+        fi
+        echo "===== ${{ matrix.config }} 配置编译完成 ====="
+
+    # 显示编译后系统信息
+    - name: 显示编译后系统信息
+      if: always()
+      run: |
+        echo "===== 编译后系统信息 ====="
+        echo "## CPU信息 ##"
+        lscpu | grep -E "(Model name|Architecture|CPU\(s\)|Thread|Core)"
+        echo ""
+        echo "## 内存信息 ##"
+        free -h
+        echo ""
+        echo "## 磁盘空间信息 ##"
+        df -h
+        echo ""
+        echo "## 系统负载信息 ##"
+        uptime
+        echo ""
+        echo "## 编译目录大小 ##"
+        if [ -d "openwrt" ]; then
+          echo "OpenWrt目录大小: $(du -sh openwrt | cut -f1)"
+        fi
+        if [ -d "dl" ]; then
+          echo "dl目录大小: $(du -sh dl | cut -f1)"
+        fi
+        if [ -d "staging_dir" ]; then
+          echo "staging_dir目录大小: $(du -sh staging_dir | cut -f1)"
+        fi
+        if [ -d ".ccache" ]; then
+          echo ".ccache目录大小: $(du -sh .ccache | cut -f1)"
+        fi
+        echo "========================="
+
+    # 准备构建产物（带权限检查）
+    - name: 准备构建产物
+      run: |
+        echo "===== 准备构建产物 ====="
+        # 验证脚本权限
+        if [ ! -x "scripts/rename-firmware.sh" ]; then
+          echo "警告: rename-firmware.sh 脚本没有执行权限，重新设置..."
+          chmod +x scripts/rename-firmware.sh
+        fi
+        ./scripts/rename-firmware.sh ${{ matrix.repo.short }} ${{ matrix.config }} ${{ matrix.device }} ${{ env.CHIP }}
+        echo "构建产物准备完成"
+        echo "========================="
+
+    # 上传构建日志
+    - name: 上传构建日志
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-${{ matrix.repo.short }}-${{ matrix.config }}-${{ matrix.device }}-${{ env.CHIP }}
+        path: |
+          openwrt/build.log
+          build-error.log
+        retention-days: 7
+
+    # 上传构建产物
+    - name: 上传构建产物
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware-${{ matrix.repo.short }}-${{ matrix.config }}-${{ matrix.device }}-${{ env.CHIP }}
+        path: artifacts/
+        retention-days: 7
+
+  # 发布作业：创建Release
+  create-release:
+    needs: [setup, compile-and-package]  # 依赖setup和compile-and-package作业
+    runs-on: ubuntu-22.04
+    # 只在定时触发或手动触发时运行
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+    # 检出代码
+    - name: 检出代码
+      uses: actions/checkout@v4
+
+    # 在release作业中也设置权限
+    - name: 设置脚本权限
+      run: |
+        echo "===== 设置脚本权限 ====="
+        chmod +x scripts/*.sh
+        echo "Release作业: 已为所有脚本文件添加执行权限"
+        echo "验证权限设置:"
+        ls -la scripts/*.sh
+        echo "========================="
+
+    # 下载所有构建产物
+    - name: 下载所有构建产物
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts/
+
+    # 准备发布文件（带权限检查）
+    - name: 准备发布文件
+      run: |
+        echo "===== 准备发布文件 ====="
+        mkdir -p release
+        # 合并所有固件和配置文件
+        for dir in artifacts/firmware-*; do
+          if [ -d "$dir" ]; then
+            cp -r "$dir"/* release/
+          fi
+        done
+        # 合并所有配置文件
+        tar -czf release/${{ env.CHIP }}-config.tar.gz -C release ${{ env.CHIP }}-config/ 2>/dev/null || true
+        # 合并所有日志文件
+        tar -czf release/${{ env.CHIP }}-log.tar.gz -C release ${{ env.CHIP }}-log/ 2>/dev/null || true
+        # 合并所有软件包
+        tar -czf release/${{ env.CHIP }}-app.tar.gz -C release ${{ env.CHIP }}-app/ 2>/dev/null || true
+        
+        # 验证脚本权限
+        if [ ! -x "scripts/generate-release-notes.sh" ]; then
+          echo "警告: generate-release-notes.sh 脚本没有执行权限，重新设置..."
+          chmod +x scripts/generate-release-notes.sh
+        fi
+        
+        # 生成发布说明
+        ./scripts/generate-release-notes.sh ${{ env.CHIP }} > release/RELEASE_NOTES.md
+        echo "发布文件准备完成"
+        echo "========================="
+
+    # 创建Release
+    - name: 创建Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: $(date +%Y%m%d)-${{ env.CHIP }}
+        name: ${{ env.CHIP }} Build $(date +%Y%m%d)
+        body_path: release/RELEASE_NOTES.md
+        files: |
+          release/*.bin
+          release/*.tar.gz
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: $
