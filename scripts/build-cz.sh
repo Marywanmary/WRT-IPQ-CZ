@@ -1,155 +1,251 @@
 #!/bin/bash
-# OpenWrt 自定义脚本
+# OpenWrt 构建脚本
 # 严格错误退出机制
 set -e
 
 # 确保脚本有执行权限
 chmod +x "$0"
+chmod +x "$(dirname "$0")/script-cz.sh"
 
+# 打印开始信息
+echo "=== OpenWrt 构建开始 ==="
+echo "芯片架构: $CHIP_ARCH"
+echo "配置文件: $CONFIG_PROFILE"
+echo "分支名称: $BRANCH_NAME"
+echo "基础系统版本: $BASE_VERSION"
+echo "当前时间: $(date)"
+
+# 基础系统版本说明：
+# 环境变量 BASE_VERSION 用于控制基础系统缓存
+# "初始版本" - 表示使用初始的基础配置编译
+# "更新版本" - 表示您已修改了基础配置文件，需要重新编译基础系统
+# 
+# 以下情况需要将 BASE_VERSION 改为"更新版本"：
+# 1. 修改了芯片基础配置（configs/ipq60xx_base.config）
+# 2. 修改了分支基础配置（configs/op_base.config, configs/imm_base.config, configs/lib_base.config）
+# 
+# 如果不修改为基础系统版本，系统会使用旧的缓存，导致您修改的配置不生效！
+
+# 检查必要的环境变量
+if [ -z "$CHIP_ARCH" ] || [ -z "$CONFIG_PROFILE" ] || [ -z "$BRANCH_NAME" ]; then
+    echo "错误: 缺少必要的环境变量"
+    exit 1
+fi
+
+# 设置ccache
+export CCACHE_DIR=/ccache
+export CCACHE_MAXSIZE=5G
+ccache -s
+
+# 显示磁盘使用情况
+df -h
+
+# 检查必要的工具
+echo "=== 检查必要的工具 ==="
+if ! command -v rsync &> /dev/null; then
+    echo "错误: rsync 未安装"
+    exit 1
+fi
+
+if ! python3 -c "import distutils" &> /dev/null; then
+    echo "错误: python3-distutils 未安装"
+    exit 1
+fi
+
+# 根据分支设置仓库信息
+case "$BRANCH_NAME" in
+    "openwrt")
+        REPO_URL="https://github.com/laipeng668/openwrt.git"
+        REPO_BRANCH="master"
+        REPO_SHORT="openwrt"
+        BRANCH_CONFIG="op_base.config"
+        ;;
+    "immortalwrt")
+        REPO_URL="https://github.com/laipeng668/immortalwrt.git"
+        REPO_BRANCH="master"
+        REPO_SHORT="immwrt"
+        BRANCH_CONFIG="imm_base.config"
+        ;;
+    "libwrt")
+        REPO_URL="https://github.com/laipeng668/openwrt-6.x.git"
+        REPO_BRANCH="k6.12-nss"
+        REPO_SHORT="libwrt"
+        BRANCH_CONFIG="lib_base.config"
+        ;;
+    *)
+        echo "错误: 不支持的分支 $BRANCH_NAME"
+        exit 1
+        ;;
+esac
+
+# 克隆仓库
+echo "=== 克隆仓库 $REPO_URL ==="
+git clone --depth=1 -b $REPO_BRANCH $REPO_URL openwrt-src
+cd openwrt-src
+
+# 执行自定义脚本
 echo "=== 执行自定义脚本 ==="
+chmod +x ../scripts/script-cz.sh
+../scripts/script-cz.sh
 
-# 修改默认IP & 固件名称 & 编译署名
-sed -i 's/192.168.1.1/192.168.111.1/g' package/base-files/files/bin/config_generate
-sed -i "s/hostname='.*'/hostname='WRT'/g" package/base-files/files/bin/config_generate
+# 合并配置文件
+echo "=== 合并配置文件 ==="
+CONFIG_FILE=".config"
+CHIP_CONFIG="../configs/${CHIP_ARCH}_base.config"
+PROFILE_CONFIG="../configs/${CONFIG_PROFILE}.config"
 
-# 移除要替换的包
-rm -rf feeds/luci/applications/luci-app-appfilter
-rm -rf feeds/luci/applications/luci-app-frpc
-rm -rf feeds/luci/applications/luci-app-frps
-rm -rf feeds/packages/net/open-app-filter
-rm -rf feeds/packages/net/adguardhome
-rm -rf feeds/packages/net/ariang
-rm -rf feeds/packages/net/frp
-rm -rf feeds/packages/lang/golang
+# 检查配置文件是否存在
+if [ ! -f "$CHIP_CONFIG" ]; then
+    echo "错误: 芯片配置文件不存在 $CHIP_CONFIG"
+    exit 1
+fi
 
-# Git稀疏克隆，只克隆指定目录到本地
-function git_sparse_clone() {
-  branch="$1" repourl="$2" && shift 2
-  git clone --depth=1 -b $branch --single-branch --filter=blob:none --sparse $repourl
-  repodir=$(echo $repourl | awk -F '/' '{print $(NF)}')
-  cd $repodir && git sparse-checkout set $@
-  mv -f $@ ../package
-  cd .. && rm -rf $repodir
+if [ ! -f "$PROFILE_CONFIG" ]; then
+    echo "错误: 配置文件不存在 $PROFILE_CONFIG"
+    exit 1
+fi
+
+# 合并配置文件 (按照优先级: 芯片配置 < 分支配置 < 软件包配置)
+cat "$CHIP_CONFIG" > "$CONFIG_FILE"
+if [ -f "../configs/$BRANCH_CONFIG" ]; then
+    cat "../configs/$BRANCH_CONFIG" >> "$CONFIG_FILE"
+fi
+cat "$PROFILE_CONFIG" >> "$CONFIG_FILE"
+
+# 应用配置
+echo "=== 应用配置 ==="
+make defconfig
+
+# 分层编译
+echo "=== 分层编译开始 ==="
+
+# 1. 工具链编译 (如果缓存不存在)
+if [ ! -d "staging_dir" ]; then
+    echo "=== 编译工具链 ==="
+    make toolchain/install -j$(nproc) || {
+        echo "错误: 工具链编译失败"
+        exit 1
+    }
+else
+    echo "=== 使用缓存的工具链 ==="
+fi
+
+# 2. 依赖包下载 (添加重试机制)
+echo "=== 下载依赖包 ==="
+download_success=false
+for i in {1..3}; do
+    echo "第 $i 次尝试下载依赖包..."
+    if make download -j$(nproc); then
+        download_success=true
+        break
+    else
+        echo "第 $i 次下载失败，清理后重试..."
+        # 清理可能损坏的下载文件
+        find dl -name "*.tar.*" -type f -exec rm -f {} \;
+        # 等待一段时间再重试
+        sleep 30
+    fi
+done
+
+if [ "$download_success" = false ]; then
+    echo "错误: 依赖包下载失败，已重试3次"
+    exit 1
+fi
+
+# 3. 内核编译 (添加详细日志和错误处理)
+if [ ! -d "build_dir/target-*/linux-*/" ]; then
+    echo "=== 编译内核 ==="
+    # 先尝试单线程编译，如果有问题可以看到详细错误
+    if ! make target/linux/compile -j1 V=s; then
+        echo "错误: 内核编译失败，尝试使用不同的编译选项..."
+        # 清理内核编译目录
+        rm -rf build_dir/target-*/linux-*/
+        # 禁用可能有问题的包
+        echo "=== 禁用可能有问题的包 ==="
+        echo "# CONFIG_PACKAGE_kmod-qca-nss-crypto is not set" >> .config
+        echo "# CONFIG_PACKAGE_kmod-qca-nss-drv is not set" >> .config
+        echo "# CONFIG_PACKAGE_kmod-qca-nss-clients is not set" >> .config
+        echo "# CONFIG_PACKAGE_nss-firmware is not set" >> .config
+        make defconfig
+        # 再次尝试编译内核
+        make target/linux/compile -j$(nproc) || {
+            echo "错误: 内核编译失败，即使禁用了问题包"
+            exit 1
+        }
+    fi
+else
+    echo "=== 使用缓存的内核 ==="
+fi
+
+# 4. 基础系统编译 (根据基础系统版本决定)
+# 重要说明：
+# 当 BASE_VERSION 为"初始版本"时，如果存在基础系统缓存则使用缓存
+# 当 BASE_VERSION 为"更新版本"时，强制重新编译基础系统（忽略缓存）
+if [ "$BASE_VERSION" = "更新版本" ]; then
+    echo "=== 检测到基础系统版本为'更新版本'，强制重新编译基础系统 ==="
+    rm -rf build_dir/target-*/root-*/
+    rm -rf staging_dir/target-*/
+    make target/compile -j$(nproc) || {
+        echo "错误: 基础系统编译失败"
+        exit 1
+    }
+elif [ ! -d "build_dir/target-*/root-*/" ]; then
+    echo "=== 编译基础系统 ==="
+    make target/compile -j$(nproc) || {
+        echo "错误: 基础系统编译失败"
+        exit 1
+    }
+else
+    echo "=== 使用缓存的基础系统 ==="
+fi
+
+# 5. 软件包编译 (添加错误处理)
+echo "=== 编译软件包 ==="
+# 先尝试编译所有软件包，如果有问题再处理
+if ! make package/compile -j$(nproc); then
+    echo "错误: 软件包编译失败，尝试跳过有问题的包..."
+    # 记录编译失败的包
+    make package/compile -j1 V=s 2> compile_errors.log || true
+    # 分析错误日志，找出有问题的包
+    grep "ERROR:" compile_errors.log | grep -o "package/[^/]*" | sort | uniq > problem_packages.txt
+    echo "以下包编译失败，将被禁用:"
+    cat problem_packages.txt
+    
+    # 禁用有问题的包
+    while read -r pkg; do
+        pkg_name=$(echo "$pkg" | sed 's/package\///')
+        echo "禁用包: $pkg_name"
+        echo "# CONFIG_PACKAGE_$pkg_name is not set" >> .config
+    done < problem_packages.txt
+    
+    # 重新应用配置
+    make defconfig
+    # 再次尝试编译软件包
+    make package/compile -j$(nproc) || {
+        echo "错误: 软件包编译失败，即使禁用了问题包"
+        exit 1
+    }
+fi
+
+# 6. 固件打包
+echo "=== 打包固件 ==="
+make target/install -j1 || {
+    echo "错误: 固件打包失败"
+    exit 1
 }
 
-# 创建必要的目录结构
-mkdir -p feeds/packages/net
-mkdir -p feeds/packages/lang
-mkdir -p feeds/luci/applications
+# 清理中间文件
+echo "=== 清理中间文件 ==="
+make clean
+rm -rf build_dir/target-*/linux-*/.{tmp,modorder}
+find build_dir -name ".pkgdir" -type d -exec rm -rf {} +
+find dl -type f -name "*.tar.*" -mtime +7 -delete
+ccache -C
 
-# Go & OpenList & ariang & frp & AdGuardHome & WolPlus & Lucky & OpenAppFilter & 集客无线AC控制器 & 雅典娜LED控制
-git clone --depth=1 https://github.com/sbwml/packages_lang_golang -b 24.x feeds/packages/lang/golang
-git clone --depth=1 https://github.com/sbwml/luci-app-openlist2 package/openlist
-git_sparse_clone master https://github.com/laipeng668/packages net/ariang
-git_sparse_clone master https://github.com/laipeng668/packages net/frp
-mv -f package/frp feeds/packages/net/frp
-git_sparse_clone master https://github.com/laipeng668/luci applications/luci-app-frpc applications/luci-app-frps
-mv -f package/luci-app-frpc feeds/luci/applications/luci-app-frpc
-mv -f package/luci-app-frps feeds/luci/applications/luci-app-frps
-git clone --depth=1 https://github.com/NONGFAH/luci-app-athena-led package/luci-app-athena-led
-chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena-led
+# 显示磁盘使用情况
+df -h
 
-# ====== Mary定制包 ======
-git clone --depth=1 https://github.com/sirpdboy/luci-app-netspeedtest package/netspeedtest
-git clone --depth=1 https://github.com/sirpdboy/luci-app-partexp package/luci-app-partexp
-git clone --depth=1 https://github.com/sirpdboy/luci-app-taskplan package/luci-app-taskplan
-git_sparse_clone main https://github.com/VIKINGYFY/packages luci-app-timewol
-git_sparse_clone main https://github.com/VIKINGYFY/packages luci-app-wolplus
-git clone --depth=1 https://github.com/tailscale/tailscale package/tailscale
-git clone --depth=1 https://github.com/gdy666/luci-app-lucky package/luci-app-lucky
-git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo package/luci-app-momo
-git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki package/nikki
-git clone --depth=1 https://github.com/vernesong/OpenClash package/OpenClash
+# 显示ccache统计
+ccache -s
 
-# ====== 添加kenzok8软件源并且让它的优先级最低 ======
-git clone --depth=1 https://github.com/kenzok8/small-package package/small8
-
-# 更新feeds
-echo "=== 更新feeds ==="
-./scripts/feeds update -a
-./scripts/feeds install -a
-
-# 修改管理员密码和无线密码为空
-sed -i 's/root:::0:0:99999:7:::/root:$1$0Vl0Zg1r$5mFVj5z8bV7J6X8Y9Z0a1:::0:0:99999:7:::/g' package/base-files/files/etc/shadow
-
-# 修改无线密码（检查文件是否存在）
-echo "=== 修改无线密码 ==="
-if [ -f "package/kernel/mac80211/files/lib/wifi/mac80211.sh" ]; then
-    sed -i 's/option password.*/option password ""/' package/kernel/mac80211/files/lib/wifi/mac80211.sh
-else
-    echo "警告: 找不到 mac80211.sh 文件，跳过修改无线密码"
-fi
-
-# 修改编译署名（在feeds安装后执行）
-echo "=== 修改编译署名 ==="
-if [ -f "feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js" ]; then
-    sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
-else
-    echo "警告: 找不到 luci-mod-status 文件，跳过修改编译署名"
-fi
-
-# 处理依赖问题
-echo "=== 处理依赖问题 ==="
-# 创建boost-system包的虚拟包
-mkdir -p package/boost-system
-cat > package/boost-system/Makefile << 'EOF'
-include $(TOPDIR)/rules.mk
-
-PKG_NAME:=boost-system
-PKG_VERSION:=1.0.0
-PKG_RELEASE:=1
-
-include $(INCLUDE_DIR)/package.mk
-
-define Package/boost-system
-  SECTION:=libs
-  CATEGORY:=Libraries
-  TITLE:=Boost.System (virtual package)
-  DEPENDS:=+boost
-endef
-
-define Package/boost-system/description
- This is a virtual package for boost-system.
-endef
-
-define Build/Compile
-endef
-
-define Package/boost-system/install
-endef
-
-$(eval $(call BuildPackage,boost-system))
-EOF
-
-# 创建libpcre包的虚拟包
-mkdir -p package/libpcre
-cat > package/libpcre/Makefile << 'EOF'
-include $(TOPDIR)/rules.mk
-
-PKG_NAME:=libpcre
-PKG_VERSION:=1.0.0
-PKG_RELEASE:=1
-
-include $(INCLUDE_DIR)/package.mk
-
-define Package/libpcre
-  SECTION:=libs
-  CATEGORY:=Libraries
-  TITLE:=PCRE (virtual package)
-  DEPENDS:=+libpcre2
-endef
-
-define Package/libpcre/description
- This is a virtual package for libpcre.
-endef
-
-define Build/Compile
-endef
-
-define Package/libpcre/install
-endef
-
-$(eval $(call BuildPackage,libpcre))
-EOF
-
-echo "=== 自定义脚本执行完成 ==="
+echo "=== OpenWrt 构建完成 ==="
