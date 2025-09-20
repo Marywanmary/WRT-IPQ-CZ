@@ -39,7 +39,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ github.sha }}
+          key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ hashFiles('configs/*.config') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ github.ref_name }}-
+            ccache-${{ runner.os }}-
+            ccache-
 
       - name: 安装依赖（兼容 Ubuntu 24.04+）
         run: |
@@ -59,7 +63,7 @@ jobs:
   build:
     needs: prepare
     strategy:
-      max-parallel: 6  # 并发最大6
+      max-parallel: 6
       matrix:
         config_type: [Ultra, Max, Pro]
         branch_base: [op, imm, lib]
@@ -93,7 +97,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ github.sha }}
+          key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ hashFiles('configs/*.config') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ github.ref_name }}-
+            ccache-${{ runner.os }}-
+            ccache-
 
       - name: 自动 clone OpenWrt 源码到 openwrt/（如不存在）
         run: |
@@ -120,6 +128,15 @@ jobs:
             fi
           done
           cat "$CHIP_CFG" "$BRANCH_CFG" "$PKG_CFG" > ${{ env.OPENWRT_ROOT }}/.config
+          echo "合并配置文件顺序: $CHIP_CFG -> $BRANCH_CFG -> $PKG_CFG"
+          echo "==== 合并后 openwrt/.config 关键 target/profile 部分 ===="
+          grep -E 'CONFIG_TARGET|CONFIG_DEVICE|CONFIG_PROFILE|CONFIG_PACKAGE|CONFIG_TARGET_DEVICE_qualcommax_ipq60xx' ${{ env.OPENWRT_ROOT }}/.config || true
+          echo "==== 完整 .config 路径: ${{ env.OPENWRT_ROOT }}/.config ===="
+
+      - name: 打印 .config 关键内容(便于定位设备配置)
+        run: |
+          echo "==== openwrt/.config 设备相关关键配置 ===="
+          grep -E 'CONFIG_TARGET|CONFIG_DEVICE|CONFIG_PROFILE|CONFIG_PACKAGE|CONFIG_TARGET_DEVICE_qualcommax_ipq60xx' ${{ env.OPENWRT_ROOT }}/.config || true
 
       - name: 拷贝 feeds.conf.default 到 openwrt 目录
         run: cp feeds.conf.default ${{ env.OPENWRT_ROOT }}/feeds.conf.default
@@ -139,12 +156,12 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 编译固件
+      - name: 编译固件并保存日志
         run: |
           set -e
           cd ${{ env.OPENWRT_ROOT }}
           make defconfig
-          make -j$(nproc) V=s CCACHE_DIR=${{ env.CCACHE_DIR }}
+          make -j$(nproc) V=s CCACHE_DIR=${{ env.CCACHE_DIR }} | tee build.log
 
       - name: 检查并归档固件与配置日志
         run: |
@@ -157,15 +174,18 @@ jobs:
             cp "$bin_file" "$ARTIFACTS_DIR/"
             BIN_FOUND=1
           done
+          cp ${{ env.OPENWRT_ROOT }}/.config "$ARTIFACTS_DIR/config-${{ env.CONFIG_TYPE }}.txt" || true
+          cp ${{ env.OPENWRT_ROOT }}/build.log "$ARTIFACTS_DIR/build.log" || true
           if [ "$BIN_FOUND" -eq 0 ]; then
             echo "警告：未发现任何固件 bin 文件，编译可能未成功！" >&2
-            ls -R $BIN_PATH
+            echo "==== openwrt/bin/targets 目录树 ===="
+            find $BIN_PATH
+            echo "==== build.log 最后200行 ===="
+            tail -n 200 ${{ env.OPENWRT_ROOT }}/build.log || true
             exit 220
           fi
-          cp ${{ env.OPENWRT_ROOT }}/.config "$ARTIFACTS_DIR/config-${{ env.CONFIG_TYPE }}.txt" || true
-          cp ${{ env.OPENWRT_ROOT }}/build.log "$ARTIFACTS_DIR/build.log" 2>/dev/null || true
 
-      - name: 上传构建产物
+      - name: 上传构建产物和日志
         uses: actions/upload-artifact@v4
         with:
           name: firmware-${{ env.CHIP }}-${{ env.BRANCH_BASE }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}
