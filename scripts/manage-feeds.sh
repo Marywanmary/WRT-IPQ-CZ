@@ -15,13 +15,16 @@ cd "$OPENWRT_DIR"
 
 echo "===== 管理第三方软件源 ====="
 
-# 1. 检查核心软件包结构
-echo "检查核心软件包结构..."
+# 1. 检查并创建核心软件包结构
+echo "检查并创建核心软件包结构..."
+
+# 1.1 确保package目录存在
 if [ ! -d "package" ]; then
     echo "创建package目录..."
     mkdir -p package
 fi
 
+# 1.2 创建package/Makefile
 if [ ! -f "package/Makefile" ]; then
     echo "创建package/Makefile..."
     cat > package/Makefile << 'EOF'
@@ -61,6 +64,7 @@ tools/%: prepare-tmpinfo
 
 .PHONY: prereq prepare-tmpinfo
 EOF
+    echo "✓ 已创建package/Makefile"
 fi
 
 # 2. 备份原始配置
@@ -100,7 +104,7 @@ git_sparse_clone() {
 # 3.4 克隆所需的包
 echo "克隆所需的包..."
 
-# Go语言支持
+# Go语言支持 - 优先克隆
 echo "克隆golang包..."
 git clone --depth=1 https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang
 
@@ -152,14 +156,15 @@ chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app
 echo "清理临时目录..."
 rm -rf package
 
-# 5. 创建feeds.conf.default - 使用最简单的方法
+# 5. 创建feeds.conf.default - 包含golang源
 echo "创建feeds.conf.default..."
 
 # 5.1 先删除现有的文件
 rm -f feeds.conf.default feeds.conf
 
-# 5.2 使用最简单的方法创建文件
+# 5.2 使用最简单的方法创建文件，包含golang源
 cat > feeds.conf.default << 'ENDOFFILE'
+src-git golang https://github.com/sbwml/packages_lang_golang;25.x
 src-git tailscale https://github.com/tailscale/tailscale
 src-git taskplan https://github.com/sirpdboy/luci-app-taskplan
 src-git lucky https://github.com/gdy666/luci-app-lucky
@@ -167,7 +172,7 @@ src-git momo https://github.com/nikkinikki-org/OpenWrt-momo
 src-git small-package https://github.com/kenzok8/small-package
 ENDOFFILE
 
-echo "✓ 已创建feeds.conf.default"
+echo "✓ 已创建feeds.conf.default（包含golang源）"
 
 # 6. 同步到feeds.conf
 cp feeds.conf.default feeds.conf
@@ -200,7 +205,8 @@ else
     rm -f feeds.conf.default feeds.conf
     
     # 使用printf确保每行以\n结尾
-    printf "src-git tailscale https://github.com/tailscale/tailscale\n" > feeds.conf.default
+    printf "src-git golang https://github.com/sbwml/packages_lang_golang;25.x\n" > feeds.conf.default
+    printf "src-git tailscale https://github.com/tailscale/tailscale\n" >> feeds.conf.default
     printf "src-git taskplan https://github.com/sirpdboy/luci-app-taskplan\n" >> feeds.conf.default
     printf "src-git lucky https://github.com/gdy666/luci-app-lucky\n" >> feeds.conf.default
     printf "src-git momo https://github.com/nikkinikki-org/OpenWrt-momo\n" >> feeds.conf.default
@@ -216,7 +222,7 @@ else
         
         # 尝试最小配置
         rm -f feeds.conf.default feeds.conf
-        printf "src-git tailscale https://github.com/tailscale/tailscale\n" > feeds.conf.default
+        printf "src-git golang https://github.com/sbwml/packages_lang_golang;25.x\n" > feeds.conf.default
         cp feeds.conf.default feeds.conf
         
         if ./scripts/feeds list >/dev/null 2>&1; then
@@ -224,6 +230,7 @@ else
             
             # 逐个添加源并测试
             sources=(
+                "src-git tailscale https://github.com/tailscale/tailscale"
                 "src-git taskplan https://github.com/sirpdboy/luci-app-taskplan"
                 "src-git lucky https://github.com/gdy666/luci-app-lucky"
                 "src-git momo https://github.com/nikkinikki-org/OpenWrt-momo"
@@ -267,7 +274,15 @@ echo "清理软件源..."
 echo "安装软件源..."
 ./scripts/feeds install -a
 
-# 13. 检查核心软件包结构
+# 13. 验证Go语言支持
+echo "验证Go语言支持..."
+if [ -d "feeds/packages.lang_golang" ]; then
+    echo "✓ Go 语言支持已正确添加"
+else
+    echo "⚠ Go 语言支持可能有问题，检查 feeds 更新结果"
+fi
+
+# 14. 检查核心软件包结构
 echo "检查核心软件包结构..."
 if [ ! -f "package/Makefile" ]; then
     echo "错误: package/Makefile 不存在，尝试修复..."
@@ -312,7 +327,7 @@ EOF
     echo "✓ 已重新创建package/Makefile"
 fi
 
-# 14. 修复配置文件（如果存在）
+# 15. 修复配置文件（如果存在）
 if [ -f ".config" ]; then
     echo "修复配置文件..."
     cp .config .config.backup
