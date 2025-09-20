@@ -222,18 +222,18 @@ jobs:
         cd openwrt
         echo "REPO_SHORT=${{ matrix.repo.short }}" >> $GITHUB_ENV
 
-    # 添加管理第三方软件源
+    # 管理第三方软件源（关键步骤）
     - name: 管理第三方软件源
       run: |
-       echo "===== 管理第三方软件源 ====="
-       # 验证脚本权限
-       if [ ! -x "scripts/manage-feeds.sh" ]; then
-        echo "警告: manage-feeds.sh 脚本没有执行权限，重新设置..."
-        chmod +x scripts/manage-feeds.sh
-       fi
-       ./scripts/manage-feeds.sh openwrt
-       echo "第三方软件源管理完成"
-       echo "========================="
+        echo "===== 管理第三方软件源 ====="
+        # 验证脚本权限
+        if [ ! -x "scripts/manage-feeds.sh" ]; then
+          echo "警告: manage-feeds.sh 脚本没有执行权限，重新设置..."
+          chmod +x scripts/manage-feeds.sh
+        fi
+        ./scripts/manage-feeds.sh openwrt
+        echo "第三方软件源管理完成"
+        echo "========================="
 
     # 设置默认配置（带权限检查）
     - name: 设置默认配置
@@ -274,6 +274,71 @@ jobs:
         cd openwrt
         cp ../.config .config
         make defconfig
+
+    # 检查编译环境（新增的步骤）
+    - name: 检查编译环境
+      run: |
+        echo "===== 检查编译环境 ====="
+        cd openwrt
+        
+        # 检查package/Makefile是否存在
+        if [ ! -f "package/Makefile" ]; then
+          echo "错误: package/Makefile不存在，尝试创建..."
+          
+          # 创建package/Makefile
+          cat > package/Makefile << 'EOF'
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Copyright (C) 2006-2020 OpenWrt.org
+
+include $(TOPDIR)/rules.mk
+include $(INCLUDE_DIR)/target.mk
+include $(INCLUDE_DIR)/host.mk
+
+-include $(TOPDIR)/.config
+
+prereq:
+    $(if $(wildcard $(TOPDIR)/tmp/.prereq-target),)
+    $(MAKE) -C $(TOPDIR)/tmp prereq-target
+    $(MAKE) -C $(TOPDIR)/tmp prereq-host
+    $(MAKE) -C $(TOPDIR)/tmp prereq-compile
+
+prepare-tmpinfo:
+    $(MAKE) -C $(TOPDIR)/tmp info
+    $(MAKE) -C $(TOPDIR)/tmp target-info
+    $(MAKE) -C $(TOPDIR)/tmp package-info
+
+package/%: prepare-tmpinfo
+    $(MAKE) -C $(TOPDIR)/tmp package-install
+
+target/%: prepare-tmpinfo
+    $(MAKE) -C $(TOPDIR)/tmp target-install
+
+tools/%: prepare-tmpinfo
+    $(MAKE) -C $(TOPDIR)/tmp tools-install
+
+%::
+    @$(MESSAGE) "No rule to make target $@"
+    @exit 1
+
+.PHONY: prereq prepare-tmpinfo
+EOF
+        
+          echo "✓ 已创建package/Makefile"
+        else
+          echo "✓ package/Makefile存在"
+        fi
+        
+        # 检查其他必要文件
+        for file in include/rules.mk include/target.mk include/host.mk; do
+          if [ ! -f "$file" ]; then
+            echo "错误: $file不存在"
+            exit 1
+          fi
+        done
+        
+        echo "✓ 所有必要文件都存在"
+        echo "===== 编译环境检查完成 ====="
 
     # 编译固件
     - name: 编译固件
