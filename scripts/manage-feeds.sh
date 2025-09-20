@@ -104,57 +104,139 @@ chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app
 echo "清理临时目录..."
 rm -rf package
 
-# 4. 创建feeds.conf.default
+# 4. 创建feeds.conf.default - 使用最简单的方法
 echo "创建feeds.conf.default..."
-> feeds.conf.default
 
-# 5. 使用printf方式添加软件源（确保没有语法错误）
-printf "src-git tailscale https://github.com/tailscale/tailscale\n" >> feeds.conf.default
-printf "src-git taskplan https://github.com/sirpdboy/luci-app-taskplan\n" >> feeds.conf.default
-printf "src-git lucky https://github.com/gdy666/luci-app-lucky\n" >> feeds.conf.default
-printf "src-git momo https://github.com/nikkinikki-org/OpenWrt-momo\n" >> feeds.conf.default
-printf "src-git small-package https://github.com/kenzok8/small-package\n" >> feeds.conf.default
+# 4.1 先删除现有的文件
+rm -f feeds.conf.default feeds.conf
 
-echo "第三方软件源配置已添加到feeds.conf.default"
+# 4.2 使用最简单的方法创建文件
+cat > feeds.conf.default << 'ENDOFFILE'
+src-git tailscale https://github.com/tailscale/tailscale
+src-git taskplan https://github.com/sirpdboy/luci-app-taskplan
+src-git lucky https://github.com/gdy666/luci-app-lucky
+src-git momo https://github.com/nikkinikki-org/OpenWrt-momo
+src-git small-package https://github.com/kenzok8/small-package
+ENDOFFILE
 
-# 6. 同步到feeds.conf
+echo "✓ 已创建feeds.conf.default"
+
+# 5. 同步到feeds.conf
 cp feeds.conf.default feeds.conf
 echo "✓ 已同步feeds.conf"
 
-# 7. 验证feeds.conf格式
-echo "验证feeds.conf格式..."
-if file feeds.conf | grep -q "ASCII"; then
-    echo "✓ feeds.conf是ASCII文本文件"
-else
-    echo "⚠ feeds.conf可能包含非ASCII字符，尝试修复..."
-    dos2unix feeds.conf 2>/dev/null || true
-fi
+# 6. 详细验证文件内容
+echo "详细验证文件内容..."
 
-# 8. 显示当前配置
-echo "当前feeds.conf内容："
-cat -v feeds.conf
+# 6.1 显示文件信息
+echo "文件信息："
+ls -la feeds.conf*
 
-# 9. 逐行检查格式
-echo "逐行检查格式："
+# 6.2 检查文件类型
+echo "文件类型："
+file feeds.conf
+
+# 6.3 显示文件内容（包括不可见字符）
+echo "文件内容（包括不可见字符）："
+cat -A feeds.conf
+
+# 6.4 逐行检查
+echo "逐行检查："
 line_num=1
 while IFS= read -r line; do
-    echo "第${line_num}行: '$line'"
+    echo "第${line_num}行: '$line' (长度: ${#line})"
     ((line_num++))
 done < feeds.conf
 
-# 10. 更新软件源
+# 6.5 检查每行末尾的字符
+echo "检查每行末尾的字符："
+line_num=1
+while IFS= read -r line; do
+    last_char=${line: -1}
+    echo "第${line_num}行末尾字符: '$last_char' (ASCII: $(printf '%d' "'$last_char"))"
+    ((line_num++))
+done < feeds.conf
+
+# 7. 测试feeds.conf语法
+echo "测试feeds.conf语法..."
+if ./scripts/feeds list >/dev/null 2>&1; then
+    echo "✓ feeds.conf语法正确"
+else
+    echo "✗ feeds.conf语法错误，尝试修复..."
+    
+    # 尝试修复：重新创建文件，确保每行以\n结尾
+    echo "重新创建feeds.conf..."
+    rm -f feeds.conf.default feeds.conf
+    
+    # 使用printf确保每行以\n结尾
+    printf "src-git tailscale https://github.com/tailscale/tailscale\n" > feeds.conf.default
+    printf "src-git taskplan https://github.com/sirpdboy/luci-app-taskplan\n" >> feeds.conf.default
+    printf "src-git lucky https://github.com/gdy666/luci-app-lucky\n" >> feeds.conf.default
+    printf "src-git momo https://github.com/nikkinikki-org/OpenWrt-momo\n" >> feeds.conf.default
+    printf "src-git small-package https://github.com/kenzok8/small-package\n" >> feeds.conf.default
+    
+    cp feeds.conf.default feeds.conf
+    
+    # 再次测试
+    if ./scripts/feeds list >/dev/null 2>&1; then
+        echo "✓ 修复后的feeds.conf语法正确"
+    else
+        echo "✗ 修复后仍然有语法错误，尝试最小配置..."
+        
+        # 尝试最小配置
+        rm -f feeds.conf.default feeds.conf
+        printf "src-git tailscale https://github.com/tailscale/tailscale\n" > feeds.conf.default
+        cp feeds.conf.default feeds.conf
+        
+        if ./scripts/feeds list >/dev/null 2>&1; then
+            echo "✓ 最小配置语法正确，逐个添加其他源..."
+            
+            # 逐个添加源并测试
+            sources=(
+                "src-git taskplan https://github.com/sirpdboy/luci-app-taskplan"
+                "src-git lucky https://github.com/gdy666/luci-app-lucky"
+                "src-git momo https://github.com/nikkinikki-org/OpenWrt-momo"
+                "src-git small-package https://github.com/kenzok8/small-package"
+            )
+            
+            for source in "${sources[@]}"; do
+                echo "添加源: $source"
+                printf "%s\n" "$source" >> feeds.conf.default
+                cp feeds.conf.default feeds.conf
+                
+                if ./scripts/feeds list >/dev/null 2>&1; then
+                    echo "✓ 添加成功"
+                else
+                    echo "✗ 添加失败，跳过此源"
+                    # 回滚
+                    sed -i '$d' feeds.conf.default
+                    cp feeds.conf.default feeds.conf
+                fi
+            done
+        else
+            echo "✗ 即使最小配置也有语法错误，可能是OpenWrt环境问题"
+            exit 1
+        fi
+    fi
+fi
+
+# 8. 显示最终配置
+echo "最终feeds.conf内容："
+cat feeds.conf
+
+# 9. 更新软件源
 echo "更新软件源..."
 ./scripts/feeds update -a
 
-# 11. 清理软件源
+# 10. 清理软件源
 echo "清理软件源..."
 ./scripts/feeds clean
 
-# 12. 安装软件源
+# 11. 安装软件源
 echo "安装软件源..."
 ./scripts/feeds install -a
 
-# 13. 修复配置文件（如果存在）
+# 12. 修复配置文件（如果存在）
 if [ -f ".config" ]; then
     echo "修复配置文件..."
     cp .config .config.backup
