@@ -98,15 +98,22 @@ jobs:
           cat "$CHIP_CFG" "$BRANCH_CFG" "$PKG_CFG" > ${{ env.OPENWRT_ROOT }}/.config
           echo "合并配置文件顺序: $CHIP_CFG -> $BRANCH_CFG -> $PKG_CFG"
 
+      - name: 拷贝 feeds.conf.default 到 openwrt 目录
+        run: |
+          set -e
+          # 优先根目录查找 feeds.conf.default
+          if [ -f feeds.conf.default ]; then
+            cp feeds.conf.default ${{ env.OPENWRT_ROOT }}/feeds.conf.default
+          else
+            echo "仓库根目录缺少 feeds.conf.default 文件，请在仓库根目录添加！" >&2
+            ls -l
+            exit 210
+          fi
+
       - name: 管理 feeds 并安装所有包
         run: |
           set -e
           cd ${{ env.OPENWRT_ROOT }}
-          if [ -f ../feeds.conf.${CHIP} ]; then
-            cp ../feeds.conf.${CHIP} ${{ env.FEEDS_CONF }}
-          else
-            cp ../feeds.conf.default ${{ env.FEEDS_CONF }}
-          fi
           ./scripts/feeds update -a || { echo "feeds update 失败" >&2; exit 202; }
           ./scripts/feeds install -a || { echo "feeds install 失败" >&2; exit 203; }
 
