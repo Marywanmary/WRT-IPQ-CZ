@@ -32,8 +32,8 @@ WORKDIR /openwrt
 RUN mkdir -p /ccache /dl /staging_dir
 
 # 复制构建脚本
-COPY scripts/build.sh /openwrt/scripts/build.sh
-RUN chmod +x /openwrt/scripts/build.sh
+COPY scripts/build-cz.sh /openwrt/scripts/build-cz.sh
+RUN chmod +x /openwrt/scripts/build-cz.sh
 
 # 设置入口点
-ENTRYPOINT ["/openwrt/scripts/build.sh"]
+ENTRYPOINT ["/openwrt/scripts/build-cz.sh"]
