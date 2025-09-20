@@ -1,4 +1,4 @@
-name: 分布式/分层/增量式 OpenWrt 构建优化
+name: 分布式/分层/增量式 OpenWrt 构建（ipq60xx）
 
 on:
   push:
@@ -12,36 +12,31 @@ env:
   CCACHE_DIR: ${{ github.workspace }}/.ccache
 
 jobs:
-  # 预处理任务：环境准备与全局缓存
+  # 预处理：环境准备与缓存
   prepare:
     runs-on: ubuntu-latest
-    outputs:
-      cache-key-dl: ${{ steps.cache-dl.outputs.cache-hit }}
-      cache-key-ccache: ${{ steps.cache-ccache.outputs.cache-hit }}
     steps:
       - name: 拉取代码
         uses: actions/checkout@v4
 
-      - name: 缓存 OpenWrt dl 源码下载目录，加速依赖拉取
+      - name: 缓存 OpenWrt dl 目录，加速依赖拉取
         id: cache-dl
         uses: actions/cache@v4
         with:
           path: ${{ env.OPENWRT_ROOT }}/dl
           key: dl-${{ runner.os }}-${{ hashFiles('**/feeds.conf.default') }}
 
-      - name: 缓存 ccache，加速后续编译
+      - name: 缓存 ccache，加速编译
         id: cache-ccache
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ runner.os }}-${{ github.sha }}
 
-      - name: 安装编译依赖（兼容 Ubuntu 24.04+，解决 python3-distutils 已废弃问题）
+      - name: 安装编译依赖（兼容 Ubuntu 24.04+）
         run: |
           set -e
           export DEBIAN_FRONTEND=noninteractive
-
-          # 检查系统版本，针对 noble 及更高版本替换 python3-distutils
           . /etc/os-release
           echo "当前系统版本: $VERSION_CODENAME"
           if [[ "$VERSION_CODENAME" == "noble" || "$VERSION_CODENAME" == "or higher" ]]; then
@@ -54,20 +49,19 @@ jobs:
             sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils python3-setuptools python3-pip rsync unzip zlib1g-dev ccache || { echo "依赖安装失败" >&2; exit 105; }
           fi
 
-  # 分层并行构建 (Ultra/Max/Pro 配置，支持多设备/芯片矩阵)
   build:
     needs: prepare
     strategy:
       matrix:
-        config_type: [Ultra, Max, Pro]
+        config_type: [Ultra, Max, Pro]        # 软件包配置名
+        branch_base: [op, imm, lib]           # 分支基础配置前缀
         device: [jdcloud_re-ss-01, jdcloud_re-cs-02]
-        chip: [ipq60xx] # 可扩展芯片类型
     runs-on: ubuntu-latest
     env:
+      CHIP: ipq60xx
       CONFIG_TYPE: ${{ matrix.config_type }}
+      BRANCH_BASE: ${{ matrix.branch_base }}
       DEVICE: ${{ matrix.device }}
-      CHIP: ${{ matrix.chip }}
-      REPO_SHORT: immwrt
     steps:
       - name: 拉取代码
         uses: actions/checkout@v4
@@ -84,21 +78,29 @@ jobs:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ runner.os }}-${{ github.sha }}
 
-      - name: 合并配置文件（优先级：软件包 > 分支 > 芯片）
+      - name: 合并配置文件（芯片基础 > 分支基础 > 软件包配置）
         run: |
           set -e
-          for file in configs/${{ env.CHIP }}_base.config configs/${{ env.REPO_SHORT }}_base.config configs/${{ env.CONFIG_TYPE }}.config; do
-            [ -f "$file" ] || { echo "缺失配置文件: $file" >&2; exit 201; }
+          # 检查配置文件是否存在，缺失则详细报错
+          CHIP_CFG=configs/${CHIP}_base.config
+          BRANCH_CFG=configs/${BRANCH_BASE}_base.config
+          PKG_CFG=configs/${CONFIG_TYPE}.config
+          for cfg in "$CHIP_CFG" "$BRANCH_CFG" "$PKG_CFG"; do
+            if [ ! -f "$cfg" ]; then
+              echo "缺失配置文件: $cfg" >&2
+              ls -l configs/
+              exit 201
+            fi
           done
-          cat configs/${{ env.CHIP }}_base.config configs/${{ env.REPO_SHORT }}_base.config configs/${{ env.CONFIG_TYPE }}.config > ${{ env.OPENWRT_ROOT }}/.config
+          cat "$CHIP_CFG" "$BRANCH_CFG" "$PKG_CFG" > ${{ env.OPENWRT_ROOT }}/.config
+          echo "合并配置文件顺序: $CHIP_CFG -> $BRANCH_CFG -> $PKG_CFG"
 
-      - name: 管理 feeds，并安装所有软件包
+      - name: 管理 feeds 并安装所有包
         run: |
           set -e
           cd ${{ env.OPENWRT_ROOT }}
-          # feeds.conf 优先按芯片提供，缺失时用默认
-          if [ -f ../feeds.conf.${{ env.CHIP }} ]; then
-            cp ../feeds.conf.${{ env.CHIP }} ${{ env.FEEDS_CONF }}
+          if [ -f ../feeds.conf.${CHIP} ]; then
+            cp ../feeds.conf.${CHIP} ${{ env.FEEDS_CONF }}
           else
             cp ../feeds.conf.default ${{ env.FEEDS_CONF }}
           fi
@@ -111,10 +113,9 @@ jobs:
           cd ${{ env.OPENWRT_ROOT }}/package
           git clone --depth 1 https://github.com/sbwml/luci-app-openlist2 openlist || echo "luci-app-openlist2 拉取失败"
           git clone --depth 1 https://github.com/gdy666/luci-app-lucky luci-app-lucky || echo "luci-app-lucky 拉取失败"
-          # 可继续添加其它包
           cd ../
 
-      - name: 执行固件编译
+      - name: 编译固件
         run: |
           set -e
           cd ${{ env.OPENWRT_ROOT }}
@@ -124,7 +125,7 @@ jobs:
       - name: 归档固件与配置日志
         run: |
           set -e
-          ARTIFACTS_DIR=$GITHUB_WORKSPACE/artifacts/${{ env.CHIP }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}
+          ARTIFACTS_DIR=$GITHUB_WORKSPACE/artifacts/${{ env.CHIP }}-${{ env.BRANCH_BASE }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}
           mkdir -p "$ARTIFACTS_DIR"
           cp ${{ env.OPENWRT_ROOT }}/bin/targets/qualcommax/${{ env.CHIP }}/*.bin "$ARTIFACTS_DIR/" 2>/dev/null || echo "无固件文件"
           cp ${{ env.OPENWRT_ROOT }}/.config "$ARTIFACTS_DIR/config-${{ env.CONFIG_TYPE }}.txt" || echo "无配置文件"
@@ -133,10 +134,9 @@ jobs:
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-${{ env.CHIP }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}
-          path: artifacts/${{ env.CHIP }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}/
+          name: firmware-${{ env.CHIP }}-${{ env.BRANCH_BASE }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}
+          path: artifacts/${{ env.CHIP }}-${{ env.BRANCH_BASE }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}/
 
-  # 汇总产物并生成发布说明
   release:
     needs: build
     runs-on: ubuntu-latest
