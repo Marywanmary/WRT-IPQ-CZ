@@ -218,20 +218,55 @@ jobs:
     # 克隆OpenWrt仓库
     - name: 克隆OpenWrt仓库
       run: |
+        echo "===== 克隆OpenWrt仓库 ====="
         git clone --depth 1 --branch ${{ matrix.repo.branch }} ${{ matrix.repo.url }} openwrt
+        echo "当前目录: $(pwd)"
+        echo "目录内容:"
+        ls -la
+        echo "openwrt目录内容:"
+        ls -la openwrt/
         cd openwrt
+        echo "切换到openwrt目录: $(pwd)"
+        echo "openwrt子目录:"
+        ls -la
         echo "REPO_SHORT=${{ matrix.repo.short }}" >> $GITHUB_ENV
+        echo "===== OpenWrt仓库克隆完成 ====="
 
     # 管理第三方软件源（关键步骤）
     - name: 管理第三方软件源
       run: |
         echo "===== 管理第三方软件源 ====="
+        echo "当前工作目录: $(pwd)"
+        echo "目录内容:"
+        ls -la
+        
         # 验证脚本权限
         if [ ! -x "scripts/manage-feeds.sh" ]; then
           echo "警告: manage-feeds.sh 脚本没有执行权限，重新设置..."
           chmod +x scripts/manage-feeds.sh
         fi
-        ./scripts/manage-feeds.sh openwrt
+        
+        # 检查openwrt目录是否存在
+        if [ ! -d "openwrt" ]; then
+          echo "错误: openwrt目录不存在"
+          exit 1
+        fi
+        
+        echo "openwrt目录内容:"
+        ls -la openwrt/
+        
+        # 在openwrt目录中执行脚本
+        echo "在openwrt目录中执行脚本..."
+        cd openwrt
+        echo "当前目录: $(pwd)"
+        echo "include目录存在: $(test -d include && echo '是' || echo '否')"
+        
+        if [ -d "include" ]; then
+          echo "include目录内容:"
+          ls -la include/
+        fi
+        
+        ../scripts/manage-feeds.sh openwrt
         echo "第三方软件源管理完成"
         echo "========================="
 
@@ -264,22 +299,33 @@ jobs:
     # 更新软件源
     - name: 更新软件源
       run: |
+        echo "===== 更新软件源 ====="
         cd openwrt
+        echo "当前目录: $(pwd)"
+        echo "更新软件源..."
         ./scripts/feeds update -a
+        echo "安装软件源..."
         ./scripts/feeds install -a
+        echo "===== 软件源更新完成 ====="
 
     # 生成配置文件
     - name: 生成配置文件
       run: |
+        echo "===== 生成配置文件 ====="
         cd openwrt
+        echo "当前目录: $(pwd)"
+        echo "复制配置文件..."
         cp ../.config .config
+        echo "生成配置..."
         make defconfig
+        echo "===== 配置文件生成完成 ====="
 
     # 检查编译环境（新增的步骤）
     - name: 检查编译环境
       run: |
         echo "===== 检查编译环境 ====="
         cd openwrt
+        echo "当前目录: $(pwd)"
         
         # 检查package/Makefile是否存在
         if [ ! -f "package/Makefile" ]; then
@@ -331,6 +377,9 @@ jobs:
         for file in include/rules.mk include/target.mk include/host.mk; do
           if [ ! -f "$file" ]; then
             echo "错误: $file不存在"
+            echo "当前目录: $(pwd)"
+            echo "目录内容:"
+            ls -la
             exit 1
           fi
         done
@@ -341,8 +390,10 @@ jobs:
     # 编译固件
     - name: 编译固件
       run: |
+        echo "===== 编译固件 ====="
         cd openwrt
-        echo "===== 开始编译 ${{ matrix.config }} 配置 ====="
+        echo "当前目录: $(pwd)"
+        echo "开始编译 ${{ matrix.config }} 配置..."
         echo -e "$(nproc) thread build"
         make -j$(nproc) V=s || echo "Build failed with exit code $?" > ../build-error.log
         if [ -f "../build-error.log" ]; then
