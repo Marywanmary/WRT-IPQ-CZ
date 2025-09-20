@@ -42,21 +42,23 @@ chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app
 
 
 # ====== Mary定制包 ======
-git clone --depth=1 https://github.com/sbwml/luci-app-smbuser package/luci-app-smbuser
 git clone --depth=1 https://github.com/sirpdboy/luci-app-netspeedtest package/netspeedtest
 git clone --depth=1 https://github.com/sirpdboy/luci-app-partexp package/luci-app-partexp
 git clone --depth=1 https://github.com/sirpdboy/luci-app-taskplan package/luci-app-taskplan
 git_sparse_clone main https://github.com/VIKINGYFY/packages luci-app-timewol
 git_sparse_clone main https://github.com/VIKINGYFY/packages luci-app-wolplus
-
-#git clone --depth=1 https://github.com/vernesong/OpenClash package/OpenClash
-#git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki package/nikki
+git clone --depth=1 https://github.com/tailscale/tailscale package/tailscale
+git clone --depth=1 https://github.com/gdy666/luci-app-lucky package/luci-app-lucky
+git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo package/luci-app-momo
+git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki package/nikki
+git clone --depth=1 https://github.com/vernesong/OpenClash package/OpenClash
+#git clone --depth=1 https://github.com/sbwml/luci-app-smbuser package/luci-app-smbuser
 #git clone https://gunanovo.github.io/openwrt-tailscale package/tailscale
 #git_sparse_clone main https://github.com/kenzok8/small-package luci-app-tailscale
 #git_sparse_clone main https://github.com/kenzok8/small-package luci-app-openclash
 
-# ====== 添加kenzok8软件源 ======
-git clone smpackage https://github.com/kenzok8/small-package
+# ====== 添加kenzok8软件源并且让它的优先级最低，也就是如果有软件包冲突，它的软件包会被其它软件源替代。 ======
+git clone small8 https://github.com/kenzok8/small-package
 
 
 ./scripts/feeds update -a
