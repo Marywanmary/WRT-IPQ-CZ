@@ -1,15 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
-# ================ 中文注释：基础环境定制脚本 ================
-
 # 修改默认IP、主机名、编译署名
-sed -i 's/192.168.1.1/192.168.111.1/g' package/base-files/files/bin/config_generate || true
-sed -i "s/hostname='.*'/hostname='WRT'/g" package/base-files/files/bin/config_generate || true
-# sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js || true
+[ -f package/base-files/files/bin/config_generate ] && sed -i 's/192.168.1.1/192.168.111.1/g' package/base-files/files/bin/config_generate || true
+[ -f package/base-files/files/bin/config_generate ] && sed -i "s/hostname='.*'/hostname='WRT'/g" package/base-files/files/bin/config_generate || true
+[ -f feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js ] && \
+    sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js || true
 
-# 设空密码，WIFI密码后续由build.sh注入
-sed -i 's/root::0:0:99999:7:::/root::0:0:99999:7:::/g' package/base-files/files/etc/shadow || true
+# 设空密码
+[ -f package/base-files/files/etc/shadow ] && \
+    sed -i 's/root::0:0:99999:7:::/root::0:0:99999:7:::/g' package/base-files/files/etc/shadow || true
 
 # 清理冲突包
 rm -rf feeds/luci/applications/luci-app-appfilter || true
@@ -35,10 +35,14 @@ git_sparse_clone() {
 git clone --depth=1 https://github.com/sbwml/packages_lang_golang -b 24.x feeds/packages/lang/golang
 git clone --depth=1 https://github.com/sbwml/luci-app-openlist2 package/openlist
 git_sparse_clone frp https://github.com/laipeng668/packages net/frp
+mkdir -p feeds/packages/net
 mv -f package/frp feeds/packages/net/frp
+
 git_sparse_clone frp https://github.com/laipeng668/luci applications/luci-app-frpc applications/luci-app-frps
+mkdir -p feeds/luci/applications
 mv -f package/luci-app-frpc feeds/luci/applications/luci-app-frpc
 mv -f package/luci-app-frps feeds/luci/applications/luci-app-frps
+
 git clone --depth=1 https://github.com/NONGFAH/luci-app-athena-led package/luci-app-athena-led
 chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena-led
 
@@ -54,7 +58,7 @@ git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo package/luci-
 git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki package/nikki
 git clone --depth=1 https://github.com/vernesong/OpenClash package/OpenClash
 
-# 添加kenzok8软件源并置最低优先级（冲突时优先保留其他源）
+# 添加kenzok8软件源并置最低优先级
 git clone small8 https://github.com/kenzok8/small-package
 
 # feeds更新与安装
