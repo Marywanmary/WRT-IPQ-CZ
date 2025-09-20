@@ -1,0 +1,132 @@
+name: Distributed/Layered/Incremental OpenWrt Build
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  TZ: Asia/Shanghai
+  OPENWRT_ROOT: openwrt
+  FEEDS_CONF: feeds.conf.default
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      cache-key-dl: ${{ steps.cache-dl.outputs.cache-hit }}
+      cache-key-ccache: ${{ steps.cache-ccache.outputs.cache-hit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache DL (downloaded sources)
+        id: cache-dl
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.OPENWRT_ROOT }}/dl
+          key: dl-${{ runner.os }}-${{ hashFiles('**/feeds.conf.default') }}
+
+      - name: Cache ccache
+        id: cache-ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          
+      - name: Setup dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev ccache
+
+  build:
+    needs: prepare
+    strategy:
+      matrix:
+        config_type: [Ultra, Max, Pro]
+        device: [jdcloud_re-ss-01, jdcloud_re-cs-02]
+        chip: [ipq60xx] # 可扩展
+    runs-on: ubuntu-latest
+    env:
+      CONFIG_TYPE: ${{ matrix.config_type }}
+      DEVICE: ${{ matrix.device }}
+      CHIP: ${{ matrix.chip }}
+      REPO_SHORT: immwrt
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore DL cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.OPENWRT_ROOT }}/dl
+          key: dl-${{ runner.os }}-${{ hashFiles('**/feeds.conf.default') }}
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+
+      - name: Merge configs (优先级：软件包 > 分支 > 芯片)
+        run: |
+          cat configs/${{ env.CHIP }}_base.config configs/${{ env.REPO_SHORT }}_base.config configs/${{ env.CONFIG_TYPE }}.config > ${{ env.OPENWRT_ROOT }}/.config
+
+      - name: Manage feeds
+        run: |
+          cp feeds.conf.${{ env.CHIP }} ${{ env.OPENWRT_ROOT }}/${{ env.FEEDS_CONF }} || cp feeds.conf.default ${{ env.OPENWRT_ROOT }}/${{ env.FEEDS_CONF }}
+          cd ${{ env.OPENWRT_ROOT }}
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Replace/clone specific packages
+        run: |
+          cd ${{ env.OPENWRT_ROOT }}/package
+          git clone --depth 1 https://github.com/sbwml/luci-app-openlist2 openlist || true
+          git clone --depth 1 https://github.com/gdy666/luci-app-lucky luci-app-lucky || true
+          # 其他包同理
+          cd ../
+
+      - name: Build firmware
+        run: |
+          cd ${{ env.OPENWRT_ROOT }}
+          make defconfig
+          make -j$(nproc) V=s CCACHE_DIR=${{ env.CCACHE_DIR }}
+
+      - name: Archive firmware
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/artifacts/${{ env.CHIP }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}
+          cp ${{ env.OPENWRT_ROOT }}/bin/targets/qualcommax/${{ env.CHIP }}/*.bin $GITHUB_WORKSPACE/artifacts/${{ env.CHIP }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}/ || true
+          cp ${{ env.OPENWRT_ROOT }}/.config $GITHUB_WORKSPACE/artifacts/${{ env.CHIP }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}/config-${{ env.CONFIG_TYPE }}.txt
+          cp ${{ env.OPENWRT_ROOT }}/build.log $GITHUB_WORKSPACE/artifacts/${{ env.CHIP }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}/build.log || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ env.CHIP }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}
+          path: artifacts/${{ env.CHIP }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: Generate release notes
+        run: |
+          echo "# 自动生成发布说明" > release-notes.md
+          for d in all-artifacts/*; do
+            [ -d "$d" ] || continue
+            echo "## $(basename $d)" >> release-notes.md
+            ls $d >> release-notes.md
+          done
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
