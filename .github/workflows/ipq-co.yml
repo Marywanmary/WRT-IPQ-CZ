@@ -92,7 +92,8 @@ jobs:
         rm -rf wrt_src
 
     - name: 一次性授权所有脚本
-      run: chmod +x scripts/*.sh
+      run: |
+        find ./scripts -name "*.sh" -exec chmod +x {} \; || true
 
     - name: 执行环境脚本
       run: ./scripts/script-co.sh
