@@ -1,9 +1,9 @@
-name: WRT 自动编译与发布
+name: IPQ-co
 
 on:
-  workflow_dispatch: # 手动触发
+  workflow_dispatch:
   schedule:
-    # 北京时间周五0点，即UTC时间周四16点
+    # 北京时间周五0点(即UTC 16:00 每周四)
     - cron: '0 16 * * 4'
 
 env:
@@ -17,7 +17,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 分支与仓库信息
           - repo_url: https://github.com/laipeng668/immortalwrt.git
             repo_branch: master
             repo_short: immwrt
@@ -86,22 +85,20 @@ jobs:
       run: |
         mkdir -p output/${{ matrix.chip }}
 
-    - name: 下载源码
+    - name: 下载源码（忽略rsync消失错误）
       run: |
         git clone --depth=1 -b ${{ matrix.repo_branch }} ${{ matrix.repo_url }} wrt_src
-        rsync -a --delete wrt_src/ ./
+        rsync -a --delete wrt_src/ ./ || ( [ $? -eq 24 ] && echo "rsync警告: 文件消失, 忽略" )
         rm -rf wrt_src
 
+    - name: 一次性授权所有脚本
+      run: chmod +x scripts/*.sh
+
     - name: 执行环境脚本
-      run: |
-        chmod +x scripts/*.sh
-        # chmod +x scripts/script-co.sh
-        ./scripts/script-co.sh
+      run: ./scripts/script-co.sh
 
     - name: 执行分层编译（Ultra > Max > Pro）
-      run: |
-        # chmod +x scripts/build-co.sh
-        bash ./scripts/build-co.sh ${{ matrix.repo_short }} ${{ matrix.chip }} output/${{ matrix.chip }}
+      run: ./scripts/build-co.sh ${{ matrix.repo_short }} ${{ matrix.chip }} output/${{ matrix.chip }}
 
     - name: 保存产物到Artifact
       if: always()
@@ -142,6 +139,12 @@ jobs:
           build_dir/target-*
         key: ${{ runner.os }}-target-${{ matrix.chip }}-${{ github.run_id }}
 
+    - name: 计算Release Tag和时间
+      id: release_tag
+      run: |
+        echo "tag=$(date +'%Y%m%d')-${{ matrix.chip }}" >> $GITHUB_OUTPUT
+        echo "date=$(date +'%Y-%m-%d %H:%M:%S')" >> $GITHUB_OUTPUT
+
     - name: 上传Release
       if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
       uses: ncipollo/release-action@v1
@@ -160,9 +163,3 @@ jobs:
           发布时间: ${{ steps.release_tag.outputs.date }}  
           编译的luci-app列表：（自动获取）  
           各设备的固件、${{ matrix.chip }}-config.tar.gz、${{ matrix.chip }}-log.tar.gz、${{ matrix.chip }}-app.tar.gz
-
-    - name: 计算Release Tag和时间（输出到GITHUB_ENV）
-      id: release_tag
-      run: |
-        echo "tag=$(date +'%Y%m%d')-${{ matrix.chip }}" >> $GITHUB_OUTPUT
-        echo "date=$(date +'%Y-%m-%d %H:%M:%S')" >> $GITHUB_OUTPUT
