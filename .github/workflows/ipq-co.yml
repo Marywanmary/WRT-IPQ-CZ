@@ -18,49 +18,48 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v4
 
-      - name: 仓库自查——必须存在 feeds.conf.default
+      - name: 检查 feeds.conf.default
         run: |
           set -e
           if [ ! -f feeds.conf.default ]; then
-            echo "仓库根目录缺少 feeds.conf.default 文件，请在仓库根目录添加！" >&2
+            echo "仓库根目录缺少 feeds.conf.default 文件！" >&2
             ls -l
             exit 210
           fi
-          echo "feeds.conf.default 检查通过"
 
-      - name: 缓存 OpenWrt dl 目录，加速依赖拉取
+      - name: 缓存 OpenWrt dl
         id: cache-dl
         uses: actions/cache@v4
         with:
           path: ${{ env.OPENWRT_ROOT }}/dl
           key: dl-${{ runner.os }}-${{ hashFiles('**/feeds.conf.default') }}
 
-      - name: 缓存 ccache，加速编译
+      - name: 缓存 ccache
         id: cache-ccache
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ runner.os }}-${{ github.sha }}
 
-      - name: 安装编译依赖（兼容 Ubuntu 24.04+）
+      - name: 安装依赖（兼容 Ubuntu 24.04+）
         run: |
           set -e
           export DEBIAN_FRONTEND=noninteractive
           . /etc/os-release
-          echo "当前系统版本: $VERSION_CODENAME"
           if [[ "$VERSION_CODENAME" == "noble" || "$VERSION_CODENAME" == "or higher" ]]; then
-            sudo apt-get update -y || { echo "apt-get update 失败" >&2; exit 101; }
-            sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3 python3-pip rsync unzip zlib1g-dev ccache python3-setuptools || { echo "依赖安装失败(noble/python3-distutils已被移除)。如需 distutils，建议 pip install setuptools 或 python3 -m ensurepip --upgrade。" >&2; exit 102; }
-            python3 -m pip install --upgrade pip || { echo "pip 升级失败" >&2; exit 103; }
+            sudo apt-get update -y
+            sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3 python3-pip rsync unzip zlib1g-dev ccache python3-setuptools
+            python3 -m pip install --upgrade pip
             python3 -m pip install distutils || true
           else
-            sudo apt-get update -y || { echo "apt-get update 失败" >&2; exit 104; }
-            sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils python3-setuptools python3-pip rsync unzip zlib1g-dev ccache || { echo "依赖安装失败" >&2; exit 105; }
+            sudo apt-get update -y
+            sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils python3-setuptools python3-pip rsync unzip zlib1g-dev ccache
           fi
 
   build:
     needs: prepare
     strategy:
+      max-parallel: 6  # 并发最大6
       matrix:
         config_type: [Ultra, Max, Pro]
         branch_base: [op, imm, lib]
@@ -75,15 +74,14 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v4
 
-      - name: 仓库自查——必须存在 feeds.conf.default
+      - name: 检查 feeds.conf.default
         run: |
           set -e
           if [ ! -f feeds.conf.default ]; then
-            echo "仓库根目录缺少 feeds.conf.default 文件，请在仓库根目录添加！" >&2
+            echo "仓库根目录缺少 feeds.conf.default 文件！" >&2
             ls -l
             exit 210
           fi
-          echo "feeds.conf.default 检查通过"
 
       - name: 恢复 dl 缓存
         uses: actions/cache@v4
@@ -117,58 +115,55 @@ jobs:
           for cfg in "$CHIP_CFG" "$BRANCH_CFG" "$PKG_CFG"; do
             if [ ! -f "$cfg" ]; then
               echo "缺失配置文件: $cfg" >&2
-              echo "当前 configs 目录内容如下："
               ls -l configs/
               exit 201
             fi
           done
           cat "$CHIP_CFG" "$BRANCH_CFG" "$PKG_CFG" > ${{ env.OPENWRT_ROOT }}/.config
-          echo "合并配置文件顺序: $CHIP_CFG -> $BRANCH_CFG -> $PKG_CFG"
 
       - name: 拷贝 feeds.conf.default 到 openwrt 目录
-        run: |
-          set -e
-          cp feeds.conf.default ${{ env.OPENWRT_ROOT }}/feeds.conf.default
+        run: cp feeds.conf.default ${{ env.OPENWRT_ROOT }}/feeds.conf.default
 
-      - name: 检查 scripts/feeds 脚本存在
-        run: |
-          set -e
-          if [ ! -f ${{ env.OPENWRT_ROOT }}/scripts/feeds ]; then
-            echo "${{ env.OPENWRT_ROOT }}/scripts/feeds 文件不存在，自动 clone 逻辑未生效，请检查 openwrt 目录结构！" >&2
-            ls -l ${{ env.OPENWRT_ROOT }}/scripts/
-            exit 211
-          fi
-
-      - name: 管理 feeds 并安装所有包
-        run: |
-          set -e
-          cd ${{ env.OPENWRT_ROOT }}
-          ./scripts/feeds update -a || { echo "feeds update 失败" >&2; exit 202; }
-          ./scripts/feeds install -a || { echo "feeds install 失败" >&2; exit 203; }
-
-      - name: 拉取/替换指定第三方包
+      - name: 拉取/替换第三方包
         run: |
           set -e
           cd ${{ env.OPENWRT_ROOT }}/package || exit 0
-          git clone --depth 1 https://github.com/sbwml/luci-app-openlist2 openlist || echo "luci-app-openlist2 拉取失败"
-          git clone --depth 1 https://github.com/gdy666/luci-app-lucky luci-app-lucky || echo "luci-app-lucky 拉取失败"
+          git clone --depth 1 https://github.com/sbwml/luci-app-openlist2 openlist || true
+          git clone --depth 1 https://github.com/gdy666/luci-app-lucky luci-app-lucky || true
           cd ../
+
+      - name: 更新/安装 feeds
+        run: |
+          set -e
+          cd ${{ env.OPENWRT_ROOT }}
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
       - name: 编译固件
         run: |
           set -e
           cd ${{ env.OPENWRT_ROOT }}
-          make defconfig || { echo "make defconfig 失败" >&2; exit 204; }
-          make -j$(nproc) V=s CCACHE_DIR=${{ env.CCACHE_DIR }} || { echo "固件编译失败，请检查 logs" >&2; exit 205; }
+          make defconfig
+          make -j$(nproc) V=s CCACHE_DIR=${{ env.CCACHE_DIR }}
 
-      - name: 归档固件与配置日志
+      - name: 检查并归档固件与配置日志
         run: |
           set -e
           ARTIFACTS_DIR=$GITHUB_WORKSPACE/artifacts/${{ env.CHIP }}-${{ env.BRANCH_BASE }}-${{ env.CONFIG_TYPE }}-${{ env.DEVICE }}
           mkdir -p "$ARTIFACTS_DIR"
-          cp ${{ env.OPENWRT_ROOT }}/bin/targets/qualcommax/${{ env.CHIP }}/*.bin "$ARTIFACTS_DIR/" 2>/dev/null || echo "无固件文件"
-          cp ${{ env.OPENWRT_ROOT }}/.config "$ARTIFACTS_DIR/config-${{ env.CONFIG_TYPE }}.txt" || echo "无配置文件"
-          cp ${{ env.OPENWRT_ROOT }}/build.log "$ARTIFACTS_DIR/build.log" 2>/dev/null || echo "无 build.log"
+          BIN_PATH="${{ env.OPENWRT_ROOT }}/bin/targets"
+          BIN_FOUND=0
+          for bin_file in $(find "$BIN_PATH" -name "*.bin" 2>/dev/null); do
+            cp "$bin_file" "$ARTIFACTS_DIR/"
+            BIN_FOUND=1
+          done
+          if [ "$BIN_FOUND" -eq 0 ]; then
+            echo "警告：未发现任何固件 bin 文件，编译可能未成功！" >&2
+            ls -R $BIN_PATH
+            exit 220
+          fi
+          cp ${{ env.OPENWRT_ROOT }}/.config "$ARTIFACTS_DIR/config-${{ env.CONFIG_TYPE }}.txt" || true
+          cp ${{ env.OPENWRT_ROOT }}/build.log "$ARTIFACTS_DIR/build.log" 2>/dev/null || true
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
@@ -195,6 +190,16 @@ jobs:
             ls -lh "$d" >> release-notes.md
             echo >> release-notes.md
           done
+
+      - name: 自动发布 Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "OpenWrt 固件自动发布 ${{ github.run_number }}"
+          tag_name: "auto-release-${{ github.run_number }}"
+          body_path: release-notes.md
+          files: all-artifacts/*/*.bin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 上传发布说明
         uses: actions/upload-artifact@v4
