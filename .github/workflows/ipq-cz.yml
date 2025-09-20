@@ -58,8 +58,9 @@ jobs:
       - name: 生成构建矩阵
         id: set-matrix
         run: |
-          # 按照Ultra>Max>Pro的顺序排序配置
+          # 按照分支优先级排序，先完成一个分支的所有配置
           echo "matrix={\"branch\":[\"openwrt\",\"immortalwrt\",\"libwrt\"],\"config\":[\"Ultra\",\"Max\",\"Pro\"]}" >> $GITHUB_OUTPUT
+
 
   # 编译任务
   build:
