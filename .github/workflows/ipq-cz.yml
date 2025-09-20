@@ -165,6 +165,10 @@ jobs:
 
       - name: 在Docker中编译
         run: |
+          # 确保宿主机脚本有执行权限
+          chmod +x openwrt-build/scripts/build-cz.sh
+          chmod +x openwrt-build/scripts/script-cz.sh
+          
           docker run --rm \
             -v ${{ github.workspace }}/openwrt-build:/openwrt \
             -e CHIP_ARCH=${{ env.CHIP_ARCH }} \
@@ -174,7 +178,9 @@ jobs:
             ${{ env.DOCKER_IMAGE }} \
             /bin/bash -c "
               cd /openwrt
+              # 确保容器内脚本有执行权限
               chmod +x scripts/build-cz.sh
+              chmod +x scripts/script-cz.sh
               scripts/build-cz.sh 2>&1 | tee build.log
             "
 
