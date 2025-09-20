@@ -58,8 +58,8 @@ git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo package/luci-
 git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki package/nikki
 git clone --depth=1 https://github.com/vernesong/OpenClash package/OpenClash
 
-# 添加kenzok8软件源并置最低优先级
-git clone small8 https://github.com/kenzok8/small-package
+# ====== 添加kenzok8软件源并且让它的优先级最低 ======
+git clone --depth=1 https://github.com/kenzok8/small-package package/small8
 
 # feeds更新与安装
 ./scripts/feeds update -a
