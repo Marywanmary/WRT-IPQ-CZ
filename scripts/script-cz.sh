@@ -32,6 +32,11 @@ function git_sparse_clone() {
   cd .. && rm -rf $repodir
 }
 
+# 创建必要的目录结构
+mkdir -p feeds/packages/net
+mkdir -p feeds/packages/lang
+mkdir -p feeds/luci/applications
+
 # Go & OpenList & ariang & frp & AdGuardHome & WolPlus & Lucky & OpenAppFilter & 集客无线AC控制器 & 雅典娜LED控制
 git clone --depth=1 https://github.com/sbwml/packages_lang_golang -b 24.x feeds/packages/lang/golang
 git clone --depth=1 https://github.com/sbwml/luci-app-openlist2 package/openlist
