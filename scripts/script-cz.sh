@@ -88,4 +88,68 @@ else
     echo "警告: 找不到 luci-mod-status 文件，跳过修改编译署名"
 fi
 
+# 处理依赖问题
+echo "=== 处理依赖问题 ==="
+# 创建boost-system包的虚拟包
+mkdir -p package/boost-system
+cat > package/boost-system/Makefile << 'EOF'
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=boost-system
+PKG_VERSION:=1.0.0
+PKG_RELEASE:=1
+
+include $(INCLUDE_DIR)/package.mk
+
+define Package/boost-system
+  SECTION:=libs
+  CATEGORY:=Libraries
+  TITLE:=Boost.System (virtual package)
+  DEPENDS:=+boost
+endef
+
+define Package/boost-system/description
+ This is a virtual package for boost-system.
+endef
+
+define Build/Compile
+endef
+
+define Package/boost-system/install
+endef
+
+$(eval $(call BuildPackage,boost-system))
+EOF
+
+# 创建libpcre包的虚拟包
+mkdir -p package/libpcre
+cat > package/libpcre/Makefile << 'EOF'
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=libpcre
+PKG_VERSION:=1.0.0
+PKG_RELEASE:=1
+
+include $(INCLUDE_DIR)/package.mk
+
+define Package/libpcre
+  SECTION:=libs
+  CATEGORY:=Libraries
+  TITLE:=PCRE (virtual package)
+  DEPENDS:=+libpcre2
+endef
+
+define Package/libpcre/description
+ This is a virtual package for libpcre.
+endef
+
+define Build/Compile
+endef
+
+define Package/libpcre/install
+endef
+
+$(eval $(call BuildPackage,libpcre))
+EOF
+
 echo "=== 自定义脚本执行完成 ==="
