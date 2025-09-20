@@ -3,7 +3,6 @@ name: IPQ-co
 on:
   workflow_dispatch:
   schedule:
-    # 北京时间周五0点 (UTC周四16:00)
     - cron: '0 16 * * 4'
 
 env:
@@ -36,6 +35,9 @@ jobs:
     steps:
     - name: 检出仓库
       uses: actions/checkout@v4
+
+    - name: 释放磁盘空间
+      uses: jlumbroso/free-disk-space@main
 
     - name: 设置时区
       run: sudo timedatectl set-timezone Asia/Shanghai
@@ -84,10 +86,10 @@ jobs:
     - name: 检查 scripts 目录内容
       run: ls -l ./scripts || echo "scripts目录不存在"
 
-    - name: 下载源码（不覆盖 scripts 目录）
+    - name: 下载源码（覆盖所有内容，保留 scripts 目录）
       run: |
         git clone --depth=1 -b ${{ matrix.repo_branch }} ${{ matrix.repo_url }} wrt_src
-        rsync -a --exclude=scripts/ wrt_src/ . || ( [ $? -eq 24 ] && echo "rsync警告: 文件消失, 忽略" )
+        rsync -a wrt_src/ . || ( [ $? -eq 24 ] && echo "rsync警告: 文件消失, 忽略" )
         rm -rf wrt_src
 
     - name: 一次性授权所有脚本
