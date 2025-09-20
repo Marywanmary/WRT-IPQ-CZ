@@ -15,15 +15,63 @@ cd "$OPENWRT_DIR"
 
 echo "===== 管理第三方软件源 ====="
 
-# 1. 备份原始配置
+# 1. 检查核心软件包结构
+echo "检查核心软件包结构..."
+if [ ! -d "package" ]; then
+    echo "创建package目录..."
+    mkdir -p package
+fi
+
+if [ ! -f "package/Makefile" ]; then
+    echo "创建package/Makefile..."
+    cat > package/Makefile << 'EOF'
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Copyright (C) 2006-2020 OpenWrt.org
+
+include $(TOPDIR)/rules.mk
+include $(INCLUDE_DIR)/target.mk
+include $(INCLUDE_DIR)/host.mk
+
+-include $(TOPDIR)/.config
+
+prereq:
+    $(if $(wildcard $(TOPDIR)/tmp/.prereq-target),)
+    $(MAKE) -C $(TOPDIR)/tmp prereq-target
+    $(MAKE) -C $(TOPDIR)/tmp prereq-host
+    $(MAKE) -C $(TOPDIR)/tmp prereq-compile
+
+prepare-tmpinfo:
+    $(MAKE) -C $(TOPDIR)/tmp info
+    $(MAKE) -C $(TOPDIR)/tmp target-info
+    $(MAKE) -C $(TOPDIR)/tmp package-info
+
+package/%: prepare-tmpinfo
+    $(MAKE) -C $(TOPDIR)/tmp package-install
+
+target/%: prepare-tmpinfo
+    $(MAKE) -C $(TOPDIR)/tmp target-install
+
+tools/%: prepare-tmpinfo
+    $(MAKE) -C $(TOPDIR)/tmp tools-install
+
+%::
+    @$(MESSAGE) "No rule to make target $@"
+    @exit 1
+
+.PHONY: prereq prepare-tmpinfo
+EOF
+fi
+
+# 2. 备份原始配置
 if [ -f "feeds.conf.default" ]; then
     cp feeds.conf.default feeds.conf.default.bak
 fi
 
-# 2. 执行您提供的操作（在更新软件源之前）
+# 3. 执行您提供的操作（在更新软件源之前）
 echo "执行预操作..."
 
-# 2.1 移除要替换的包
+# 3.1 移除要替换的包
 echo "移除要替换的包..."
 rm -rf feeds/luci/applications/luci-app-appfilter
 rm -rf feeds/luci/applications/luci-app-frpc
@@ -34,10 +82,10 @@ rm -rf feeds/packages/net/ariang
 rm -rf feeds/packages/net/frp
 rm -rf feeds/packages/lang/golang
 
-# 2.2 创建临时目录
+# 3.2 创建临时目录
 mkdir -p package
 
-# 2.3 定义git_sparse_clone函数
+# 3.3 定义git_sparse_clone函数
 git_sparse_clone() {
     branch="$1" repourl="$2" && shift 2
     echo "克隆稀疏仓库: $repourl (分支: $branch)"
@@ -49,7 +97,7 @@ git_sparse_clone() {
     echo "稀疏克隆完成: $@"
 }
 
-# 2.4 克隆所需的包
+# 3.4 克隆所需的包
 echo "克隆所需的包..."
 
 # Go语言支持
@@ -100,17 +148,17 @@ echo "克隆Athena LED包..."
 git clone --depth=1 https://github.com/NONGFAH/luci-app-athena-led package/luci-app-athena-led
 chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena-led
 
-# 3. 清理临时目录
+# 4. 清理临时目录
 echo "清理临时目录..."
 rm -rf package
 
-# 4. 创建feeds.conf.default - 使用最简单的方法
+# 5. 创建feeds.conf.default - 使用最简单的方法
 echo "创建feeds.conf.default..."
 
-# 4.1 先删除现有的文件
+# 5.1 先删除现有的文件
 rm -f feeds.conf.default feeds.conf
 
-# 4.2 使用最简单的方法创建文件
+# 5.2 使用最简单的方法创建文件
 cat > feeds.conf.default << 'ENDOFFILE'
 src-git tailscale https://github.com/tailscale/tailscale
 src-git taskplan https://github.com/sirpdboy/luci-app-taskplan
@@ -121,43 +169,26 @@ ENDOFFILE
 
 echo "✓ 已创建feeds.conf.default"
 
-# 5. 同步到feeds.conf
+# 6. 同步到feeds.conf
 cp feeds.conf.default feeds.conf
 echo "✓ 已同步feeds.conf"
 
-# 6. 详细验证文件内容
+# 7. 详细验证文件内容
 echo "详细验证文件内容..."
 
-# 6.1 显示文件信息
+# 7.1 显示文件信息
 echo "文件信息："
 ls -la feeds.conf*
 
-# 6.2 检查文件类型
+# 7.2 检查文件类型
 echo "文件类型："
 file feeds.conf
 
-# 6.3 显示文件内容（包括不可见字符）
+# 7.3 显示文件内容（包括不可见字符）
 echo "文件内容（包括不可见字符）："
 cat -A feeds.conf
 
-# 6.4 逐行检查
-echo "逐行检查："
-line_num=1
-while IFS= read -r line; do
-    echo "第${line_num}行: '$line' (长度: ${#line})"
-    ((line_num++))
-done < feeds.conf
-
-# 6.5 检查每行末尾的字符
-echo "检查每行末尾的字符："
-line_num=1
-while IFS= read -r line; do
-    last_char=${line: -1}
-    echo "第${line_num}行末尾字符: '$last_char' (ASCII: $(printf '%d' "'$last_char"))"
-    ((line_num++))
-done < feeds.conf
-
-# 7. 测试feeds.conf语法
+# 8. 测试feeds.conf语法
 echo "测试feeds.conf语法..."
 if ./scripts/feeds list >/dev/null 2>&1; then
     echo "✓ feeds.conf语法正确"
@@ -220,23 +251,68 @@ else
     fi
 fi
 
-# 8. 显示最终配置
+# 9. 显示最终配置
 echo "最终feeds.conf内容："
 cat feeds.conf
 
-# 9. 更新软件源
+# 10. 更新软件源
 echo "更新软件源..."
 ./scripts/feeds update -a
 
-# 10. 清理软件源
+# 11. 清理软件源
 echo "清理软件源..."
 ./scripts/feeds clean
 
-# 11. 安装软件源
+# 12. 安装软件源
 echo "安装软件源..."
 ./scripts/feeds install -a
 
-# 12. 修复配置文件（如果存在）
+# 13. 检查核心软件包结构
+echo "检查核心软件包结构..."
+if [ ! -f "package/Makefile" ]; then
+    echo "错误: package/Makefile 不存在，尝试修复..."
+    # 重新创建package/Makefile
+    cat > package/Makefile << 'EOF'
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Copyright (C) 2006-2020 OpenWrt.org
+
+include $(TOPDIR)/rules.mk
+include $(INCLUDE_DIR)/target.mk
+include $(INCLUDE_DIR)/host.mk
+
+-include $(TOPDIR)/.config
+
+prereq:
+    $(if $(wildcard $(TOPDIR)/tmp/.prereq-target),)
+    $(MAKE) -C $(TOPDIR)/tmp prereq-target
+    $(MAKE) -C $(TOPDIR)/tmp prereq-host
+    $(MAKE) -C $(TOPDIR)/tmp prereq-compile
+
+prepare-tmpinfo:
+    $(MAKE) -C $(TOPDIR)/tmp info
+    $(MAKE) -C $(TOPDIR)/tmp target-info
+    $(MAKE) -C $(TOPDIR)/tmp package-info
+
+package/%: prepare-tmpinfo
+    $(MAKE) -C $(TOPDIR)/tmp package-install
+
+target/%: prepare-tmpinfo
+    $(MAKE) -C $(TOPDIR)/tmp target-install
+
+tools/%: prepare-tmpinfo
+    $(MAKE) -C $(TOPDIR)/tmp tools-install
+
+%::
+    @$(MESSAGE) "No rule to make target $@"
+    @exit 1
+
+.PHONY: prereq prepare-tmpinfo
+EOF
+    echo "✓ 已重新创建package/Makefile"
+fi
+
+# 14. 修复配置文件（如果存在）
 if [ -f ".config" ]; then
     echo "修复配置文件..."
     cp .config .config.backup
