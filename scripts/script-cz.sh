@@ -71,7 +71,14 @@ echo "=== 更新feeds ==="
 
 # 修改管理员密码和无线密码为空
 sed -i 's/root:::0:0:99999:7:::/root:$1$0Vl0Zg1r$5mFVj5z8bV7J6X8Y9Z0a1:::0:0:99999:7:::/g' package/base-files/files/etc/shadow
-sed -i 's/option password.*/option password ""/' package/kernel/mac80211/files/lib/wifi/mac80211.sh
+
+# 修改无线密码（检查文件是否存在）
+echo "=== 修改无线密码 ==="
+if [ -f "package/kernel/mac80211/files/lib/wifi/mac80211.sh" ]; then
+    sed -i 's/option password.*/option password ""/' package/kernel/mac80211/files/lib/wifi/mac80211.sh
+else
+    echo "警告: 找不到 mac80211.sh 文件，跳过修改无线密码"
+fi
 
 # 修改编译署名（在feeds安装后执行）
 echo "=== 修改编译署名 ==="
