@@ -1,17 +1,51 @@
 #!/bin/bash
 
 # 统一管理第三方软件源
-# 用法: ./scripts/manage-feeds.sh <openwrt_dir>
+# 用法: ./scripts/manage-feeds.sh [openwrt_dir]
 
-OPENWRT_DIR=$1
+OPENWRT_DIR="$1"
+
+# 如果没有提供目录参数，尝试自动检测
+if [ -z "$OPENWRT_DIR" ]; then
+    echo "未提供OpenWrt目录参数，尝试自动检测..."
+    
+    # 检查当前目录是否是OpenWrt根目录
+    if [ -f "rules.mk" ] && [ -f "target.mk" ] && [ -f "host.mk" ] && [ -d "package" ] && [ -d "feeds" ]; then
+        echo "检测到当前目录是OpenWrt根目录"
+        OPENWRT_DIR="."
+    # 检查当前目录是否是include目录
+    elif [ -f "rules.mk" ] && [ -f "target.mk" ] && [ -f "host.mk" ] && [ ! -d "package" ]; then
+        echo "检测到当前目录是OpenWrt的include目录，导航到根目录..."
+        OPENWRT_DIR=".."
+    # 检查上级目录是否是OpenWrt根目录
+    elif [ -f "../rules.mk" ] && [ -f "../target.mk" ] && [ -f "../host.mk" ] && [ -d "../package" ] && [ -d "../feeds" ]; then
+        echo "检测到上级目录是OpenWrt根目录"
+        OPENWRT_DIR=".."
+    # 检查上级目录的include目录
+    elif [ -f "../rules.mk" ] && [ -f "../target.mk" ] && [ -f "../host.mk" ] && [ ! -d "../package" ]; then
+        echo "检测到上级目录是OpenWrt的include目录，导航到根目录..."
+        OPENWRT_DIR="../.."
+    else
+        echo "错误: 无法自动检测OpenWrt目录"
+        echo "当前目录: $(pwd)"
+        echo "当前目录内容:"
+        ls -la
+        echo "上级目录内容:"
+        ls -la ../
+        exit 1
+    fi
+fi
 
 # 检查OpenWrt目录是否存在
 if [ ! -d "$OPENWRT_DIR" ]; then
     echo "Error: OpenWrt directory $OPENWRT_DIR not found!"
+    echo "当前目录: $(pwd)"
     exit 1
 fi
 
+# 切换到OpenWrt目录
 cd "$OPENWRT_DIR"
+echo "切换到OpenWrt目录: $(pwd)"
 
 echo "===== 管理第三方软件源 ====="
 
@@ -113,7 +147,7 @@ mkdir -p /tmp/openwrt_packages
 git_sparse_clone() {
     branch="$1" repourl="$2" && shift 2
     echo "克隆稀疏仓库: $repourl (分支: $branch)"
-    git clone --depth=1 -b $branch --single-branch --filter=blob:none --sparse $repourl
+    git clone --depth 1 -b $branch --single-branch --filter=blob:none --sparse $repourl
     repodir=$(echo $repourl | awk -F '/' '{print $(NF)}')
     cd $repodir && git sparse-checkout set $@
     mv -f $@ /tmp/openwrt_packages
@@ -126,11 +160,11 @@ echo "克隆所需的包..."
 
 # Go语言支持 - 优先克隆
 echo "克隆golang包..."
-git clone --depth=1 https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang
+git clone --depth 1 https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang
 
 # OpenList
 echo "克隆openlist包..."
-git clone --depth=1 https://github.com/sbwml/luci-app-openlist2 /tmp/openwrt_packages/openlist
+git clone --depth 1 https://github.com/sbwml/luci-app-openlist2 /tmp/openwrt_packages/openlist
 
 # ariang
 echo "克隆ariang包..."
@@ -157,20 +191,20 @@ git_sparse_clone main https://github.com/VIKINGYFY/packages luci-app-wolplus
 
 # Lucky
 echo "克隆Lucky包..."
-git clone --depth=1 https://github.com/gdy666/luci-app-lucky /tmp/openwrt_packages/luci-app-lucky
+git clone --depth 1 https://github.com/gdy666/luci-app-lucky /tmp/openwrt_packages/luci-app-lucky
 
 # OpenAppFilter
 echo "克隆OpenAppFilter包..."
-git clone --depth=1 https://github.com/destan19/OpenAppFilter.git /tmp/openwrt_packages/OpenAppFilter
+git clone --depth 1 https://github.com/destan19/OpenAppFilter.git /tmp/openwrt_packages/OpenAppFilter
 
 # GecoosAC
 echo "克隆GecoosAC包..."
-git clone --depth=1 https://github.com/lwb1978/openwrt-gecoosac /tmp/openwrt_packages/openwrt-gecoosac
+git clone --depth 1 https://github.com/lwb1978/openwrt-gecoosac /tmp/openwrt_packages/openwrt-gecoosac
 
 # Athena LED
 echo "克隆Athena LED包..."
-git clone --depth=1 https://github.com/NONGFAH/luci-app-athena-led /tmp/openwrt_packages/luci-app-athena-led
-chmod +x /tmp/openwrt_packages/luci-app-athena-led/root/etc/init.d/athena_led /tmp/openwrt_packages/luci-app-athena-led/root/usr/sbin/athena-led
+git clone --depth 1 https://github.com/NONGFAH/luci-app-athena-led /tmp/openwrt_packages/luci-app-athena-led
+chmod +x /tmp/openwrt_packages/luci-app-athena-led/root/etc/init.d/athena_led /tmp/openwrt_packages/luci-app-athena-led/root/usr/sbin/athena_led
 
 # 5. 将临时目录中的包移动到package目录
 echo "将临时目录中的包移动到package目录..."
