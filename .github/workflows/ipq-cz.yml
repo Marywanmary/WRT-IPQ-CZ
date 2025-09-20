@@ -10,8 +10,8 @@ on:
         type: choice
         options:
         - ipq60xx
-        - ipq80xx
-        - mtk
+        # - ipq80xx
+        # - mtk
       ubuntu_version:
         description: 'Ubuntu版本'
         required: true
@@ -19,7 +19,7 @@ on:
         type: choice
         options:
         - 22.04
-        - 24.04
+        # - 24.04
       base_version:
         description: '基础系统版本'
         required: true
@@ -162,8 +162,9 @@ jobs:
             ${{ env.DOCKER_IMAGE }} \
             /bin/bash -c "
               cd /openwrt
-              chmod +x scripts/build.sh
-              scripts/build.sh 2>&1 | tee build.log
+              # chmod +x scripts/build.sh
+              chmod +x scripts/*.sh
+              scripts/build-cz.sh 2>&1 | tee build.log
             "
 
       - name: 检查编译状态
