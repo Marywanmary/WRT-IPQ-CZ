@@ -285,45 +285,43 @@ jobs:
         if [ ! -f "package/Makefile" ]; then
           echo "错误: package/Makefile不存在，尝试创建..."
           
-          # 创建package/Makefile
-          cat > package/Makefile << 'EOF'
-# SPDX-License-Identifier: GPL-2.0-only
-#
-# Copyright (C) 2006-2020 OpenWrt.org
-
-include $(TOPDIR)/rules.mk
-include $(INCLUDE_DIR)/target.mk
-include $(INCLUDE_DIR)/host.mk
-
--include $(TOPDIR)/.config
-
-prereq:
-    $(if $(wildcard $(TOPDIR)/tmp/.prereq-target),)
-    $(MAKE) -C $(TOPDIR)/tmp prereq-target
-    $(MAKE) -C $(TOPDIR)/tmp prereq-host
-    $(MAKE) -C $(TOPDIR)/tmp prereq-compile
-
-prepare-tmpinfo:
-    $(MAKE) -C $(TOPDIR)/tmp info
-    $(MAKE) -C $(TOPDIR)/tmp target-info
-    $(MAKE) -C $(TOPDIR)/tmp package-info
-
-package/%: prepare-tmpinfo
-    $(MAKE) -C $(TOPDIR)/tmp package-install
-
-target/%: prepare-tmpinfo
-    $(MAKE) -C $(TOPDIR)/tmp target-install
-
-tools/%: prepare-tmpinfo
-    $(MAKE) -C $(TOPDIR)/tmp tools-install
-
-%::
-    @$(MESSAGE) "No rule to make target $@"
-    @exit 1
-
-.PHONY: prereq prepare-tmpinfo
-EOF
-        
+          # 创建package/Makefile - 使用echo逐行写入
+          echo "# SPDX-License-Identifier: GPL-2.0-only" > package/Makefile
+          echo "#" >> package/Makefile
+          echo "# Copyright (C) 2006-2020 OpenWrt.org" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "include \$(TOPDIR)/rules.mk" >> package/Makefile
+          echo "include \$(INCLUDE_DIR)/target.mk" >> package/Makefile
+          echo "include \$(INCLUDE_DIR)/host.mk" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "-include \$(TOPDIR)/.config" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "prereq:" >> package/Makefile
+          echo "	\$(if \$(wildcard \$(TOPDIR)/tmp/.prereq-target),)" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp prereq-target" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp prereq-host" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp prereq-compile" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "prepare-tmpinfo:" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp info" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp target-info" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp package-info" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "package/%: prepare-tmpinfo" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp package-install" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "target/%: prepare-tmpinfo" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp target-install" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "tools/%: prepare-tmpinfo" >> package/Makefile
+          echo "	\$(MAKE) -C \$(TOPDIR)/tmp tools-install" >> package/Makefile
+          echo "" >> package/Makefile
+          echo "%::" >> package/Makefile
+          echo "	@\$(MESSAGE) \"No rule to make target \$@\"" >> package/Makefile
+          echo "	@exit 1" >> package/Makefile
+          echo "" >> package/Makefile
+          echo ".PHONY: prereq prepare-tmpinfo" >> package/Makefile
+          
           echo "✓ 已创建package/Makefile"
         else
           echo "✓ package/Makefile存在"
