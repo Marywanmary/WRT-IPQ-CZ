@@ -11,11 +11,6 @@ echo "=== 执行自定义脚本 ==="
 # 修改默认IP & 固件名称 & 编译署名
 sed -i 's/192.168.1.1/192.168.111.1/g' package/base-files/files/bin/config_generate
 sed -i "s/hostname='.*'/hostname='WRT'/g" package/base-files/files/bin/config_generate
-sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
-
-# 修改管理员密码和无线密码为空
-sed -i 's/root:::0:0:99999:7:::/root:$1$0Vl0Zg1r$5mFVj5z8bV7J6X8Y9Z0a1:::0:0:99999:7:::/g' package/base-files/files/etc/shadow
-sed -i 's/option password.*/option password ""/' package/kernel/mac80211/files/lib/wifi/mac80211.sh
 
 # 移除要替换的包
 rm -rf feeds/luci/applications/luci-app-appfilter
@@ -68,5 +63,17 @@ git clone --depth=1 https://github.com/kenzok8/small-package package/small8
 echo "=== 更新feeds ==="
 ./scripts/feeds update -a
 ./scripts/feeds install -a
+
+# 修改管理员密码和无线密码为空
+sed -i 's/root:::0:0:99999:7:::/root:$1$0Vl0Zg1r$5mFVj5z8bV7J6X8Y9Z0a1:::0:0:99999:7:::/g' package/base-files/files/etc/shadow
+sed -i 's/option password.*/option password ""/' package/kernel/mac80211/files/lib/wifi/mac80211.sh
+
+# 修改编译署名（在feeds安装后执行）
+echo "=== 修改编译署名 ==="
+if [ -f "feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js" ]; then
+    sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
+else
+    echo "警告: 找不到 luci-mod-status 文件，跳过修改编译署名"
+fi
 
 echo "=== 自定义脚本执行完成 ==="
