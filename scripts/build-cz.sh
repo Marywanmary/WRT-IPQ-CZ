@@ -40,6 +40,18 @@ ccache -s
 # 显示磁盘使用情况
 df -h
 
+# 检查必要的工具
+echo "=== 检查必要的工具 ==="
+if ! command -v rsync &> /dev/null; then
+    echo "错误: rsync 未安装"
+    exit 1
+fi
+
+if ! python3 -c "import distutils" &> /dev/null; then
+    echo "错误: python3-distutils 未安装"
+    exit 1
+fi
+
 # 根据分支设置仓库信息
 case "$BRANCH_NAME" in
     "openwrt")
