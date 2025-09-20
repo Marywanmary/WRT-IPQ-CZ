@@ -1,4 +1,13 @@
-name: OpenWrt IPQ编译流程
+name: IPQ-cz
+
+# 工作流说明：
+# 1. base_version 参数用于控制基础系统缓存，初始值为"初始版本"
+# 2. 当您修改了以下配置文件时，需要将此值改为"更新版本"：
+#    - configs/ipq60xx_base.config（芯片基础配置）
+#    - configs/op_base.config（openwrt分支基础配置）
+#    - configs/imm_base.config（immortalwrt分支基础配置）
+#    - configs/lib_base.config（libwrt分支基础配置）
+# 3. 修改后系统会使用新的配置重新编译基础系统，避免使用旧缓存导致配置不生效
 
 on:
   workflow_dispatch:
@@ -10,8 +19,8 @@ on:
         type: choice
         options:
         - ipq60xx
-        # - ipq80xx
-        # - mtk
+        # - ipq80xx  # 暂时注释掉
+        # - mtk      # 暂时注释掉
       ubuntu_version:
         description: 'Ubuntu版本'
         required: true
@@ -19,12 +28,15 @@ on:
         type: choice
         options:
         - 22.04
-        # - 24.04
+        # - 24.04    # 暂时注释掉
       base_version:
-        description: '基础系统版本'
+        description: '基础系统版本（初始为"初始版本"，修改基础配置后改为"更新版本"）'
         required: true
-        default: '1'
-        type: string
+        default: '初始版本'
+        type: choice
+        options:
+        - 初始版本
+        - 更新版本
 
   schedule:
     # 北京时间周五0点 = UTC时间周四16:00
@@ -33,7 +45,7 @@ on:
 env:
   CHIP_ARCH: ${{ github.event.inputs.chip_arch || 'ipq60xx' }}
   UBUNTU_VERSION: ${{ github.event.inputs.ubuntu_version || '22.04' }}
-  BASE_VERSION: ${{ github.event.inputs.base_version || '1' }}
+  BASE_VERSION: ${{ github.event.inputs.base_version || '初始版本' }}
   DOCKER_IMAGE: "openwrt-builder:${{ github.event.inputs.chip_arch || 'ipq60xx' }}-${{ github.event.inputs.ubuntu_version || '22.04' }}"
 
 jobs:
@@ -162,8 +174,7 @@ jobs:
             ${{ env.DOCKER_IMAGE }} \
             /bin/bash -c "
               cd /openwrt
-              # chmod +x scripts/build.sh
-              chmod +x scripts/*.sh
+              chmod +x scripts/build-cz.sh
               scripts/build-cz.sh 2>&1 | tee build.log
             "
 
@@ -275,7 +286,7 @@ jobs:
           cd ..
 
       - name: 上传编译产物
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}
           path: openwrt-build/artifacts/
@@ -288,7 +299,7 @@ jobs:
     if: always()
     steps:
       - name: 下载所有产物
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 
