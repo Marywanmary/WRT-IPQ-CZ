@@ -6,7 +6,7 @@ set -euo pipefail
 # 修改默认IP、主机名、编译署名
 sed -i 's/192.168.1.1/192.168.111.1/g' package/base-files/files/bin/config_generate || true
 sed -i "s/hostname='.*'/hostname='WRT'/g" package/base-files/files/bin/config_generate || true
-sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js || true
+# sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js || true
 
 # 设空密码，WIFI密码后续由build.sh注入
 sed -i 's/root::0:0:99999:7:::/root::0:0:99999:7:::/g' package/base-files/files/etc/shadow || true
