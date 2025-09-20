@@ -94,13 +94,14 @@ jobs:
 
     - name: 执行环境脚本
       run: |
-        chmod +x scripts/script.sh
-        ./scripts/script.sh
+        chmod +x scripts/*.sh
+        # chmod +x scripts/script-co.sh
+        ./scripts/script-co.sh
 
     - name: 执行分层编译（Ultra > Max > Pro）
       run: |
-        chmod +x scripts/build.sh
-        bash scripts/build.sh ${{ matrix.repo_short }} ${{ matrix.chip }} output/${{ matrix.chip }}
+        # chmod +x scripts/build-co.sh
+        bash ./scripts/build-co.sh ${{ matrix.repo_short }} ${{ matrix.chip }} output/${{ matrix.chip }}
 
     - name: 保存产物到Artifact
       if: always()
