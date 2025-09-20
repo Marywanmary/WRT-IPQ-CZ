@@ -5,6 +5,7 @@ set -e
 
 # 确保脚本有执行权限
 chmod +x "$0"
+chmod +x "$(dirname "$0")/script-cz.sh"
 
 # 打印开始信息
 echo "=== OpenWrt 构建开始 ==="
