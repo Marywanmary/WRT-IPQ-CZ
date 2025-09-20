@@ -61,7 +61,7 @@ jobs:
       matrix:
         config_type: [Ultra, Max, Pro]
         device: [jdcloud_re-ss-01, jdcloud_re-cs-02]
-        chip: [ipq807x] # 可扩展芯片类型
+        chip: [ipq60xx] # 可扩展芯片类型
     runs-on: ubuntu-latest
     env:
       CONFIG_TYPE: ${{ matrix.config_type }}
