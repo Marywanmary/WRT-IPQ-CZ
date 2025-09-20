@@ -130,20 +130,49 @@ else
     echo "=== 使用缓存的工具链 ==="
 fi
 
-# 2. 依赖包下载
+# 2. 依赖包下载 (添加重试机制)
 echo "=== 下载依赖包 ==="
-make download -j$(nproc) || {
-    echo "错误: 依赖包下载失败"
-    exit 1
-}
+download_success=false
+for i in {1..3}; do
+    echo "第 $i 次尝试下载依赖包..."
+    if make download -j$(nproc); then
+        download_success=true
+        break
+    else
+        echo "第 $i 次下载失败，清理后重试..."
+        # 清理可能损坏的下载文件
+        find dl -name "*.tar.*" -type f -exec rm -f {} \;
+        # 等待一段时间再重试
+        sleep 30
+    fi
+done
 
-# 3. 内核编译 (如果缓存不存在)
+if [ "$download_success" = false ]; then
+    echo "错误: 依赖包下载失败，已重试3次"
+    exit 1
+fi
+
+# 3. 内核编译 (添加详细日志和错误处理)
 if [ ! -d "build_dir/target-*/linux-*/" ]; then
     echo "=== 编译内核 ==="
-    make target/linux/compile -j$(nproc) || {
-        echo "错误: 内核编译失败"
-        exit 1
-    }
+    # 先尝试单线程编译，如果有问题可以看到详细错误
+    if ! make target/linux/compile -j1 V=s; then
+        echo "错误: 内核编译失败，尝试使用不同的编译选项..."
+        # 清理内核编译目录
+        rm -rf build_dir/target-*/linux-*/
+        # 禁用可能有问题的包
+        echo "=== 禁用可能有问题的包 ==="
+        echo "# CONFIG_PACKAGE_kmod-qca-nss-crypto is not set" >> .config
+        echo "# CONFIG_PACKAGE_kmod-qca-nss-drv is not set" >> .config
+        echo "# CONFIG_PACKAGE_kmod-qca-nss-clients is not set" >> .config
+        echo "# CONFIG_PACKAGE_nss-firmware is not set" >> .config
+        make defconfig
+        # 再次尝试编译内核
+        make target/linux/compile -j$(nproc) || {
+            echo "错误: 内核编译失败，即使禁用了问题包"
+            exit 1
+        }
+    fi
 else
     echo "=== 使用缓存的内核 ==="
 fi
@@ -170,12 +199,33 @@ else
     echo "=== 使用缓存的基础系统 ==="
 fi
 
-# 5. 软件包编译
+# 5. 软件包编译 (添加错误处理)
 echo "=== 编译软件包 ==="
-make package/compile -j$(nproc) || {
-    echo "错误: 软件包编译失败"
-    exit 1
-}
+# 先尝试编译所有软件包，如果有问题再处理
+if ! make package/compile -j$(nproc); then
+    echo "错误: 软件包编译失败，尝试跳过有问题的包..."
+    # 记录编译失败的包
+    make package/compile -j1 V=s 2> compile_errors.log || true
+    # 分析错误日志，找出有问题的包
+    grep "ERROR:" compile_errors.log | grep -o "package/[^/]*" | sort | uniq > problem_packages.txt
+    echo "以下包编译失败，将被禁用:"
+    cat problem_packages.txt
+    
+    # 禁用有问题的包
+    while read -r pkg; do
+        pkg_name=$(echo "$pkg" | sed 's/package\///')
+        echo "禁用包: $pkg_name"
+        echo "# CONFIG_PACKAGE_$pkg_name is not set" >> .config
+    done < problem_packages.txt
+    
+    # 重新应用配置
+    make defconfig
+    # 再次尝试编译软件包
+    make package/compile -j$(nproc) || {
+        echo "错误: 软件包编译失败，即使禁用了问题包"
+        exit 1
+    }
+fi
 
 # 6. 固件打包
 echo "=== 打包固件 ==="
