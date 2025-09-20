@@ -1,0 +1,167 @@
+name: WRT 自动编译与发布
+
+on:
+  workflow_dispatch: # 手动触发
+  schedule:
+    # 北京时间周五0点，即UTC时间周四16点
+    - cron: '0 16 * * 4'
+
+env:
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    name: ${{ matrix.repo_short }}-${{ matrix.chip }} 编译
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 分支与仓库信息
+          - repo_url: https://github.com/laipeng668/immortalwrt.git
+            repo_branch: master
+            repo_short: immwrt
+            chip: ipq60xx
+          - repo_url: https://github.com/laipeng668/openwrt.git
+            repo_branch: master
+            repo_short: openwrt
+            chip: ipq60xx
+          - repo_url: https://github.com/laipeng668/openwrt-6.x.git
+            repo_branch: k6.12-nss
+            repo_short: libwrt
+            chip: ipq60xx
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - name: 检出仓库
+      uses: actions/checkout@v4
+
+    - name: 设置时区
+      run: sudo timedatectl set-timezone Asia/Shanghai
+
+    - name: 安装依赖
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential ccache rsync python3 unzip tar gzip bzip2 patch wget curl git gawk file time bc flex bison gettext libncurses5-dev libssl-dev zlib1g-dev libelf-dev asciidoc bash python3-distutils qemu-user-static
+
+    - name: 恢复ccache缓存
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.ccache
+        key: ${{ runner.os }}-ccache-${{ matrix.repo_short }}-${{ matrix.chip }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-
+
+    - name: 恢复dl源包缓存
+      uses: actions/cache@v4
+      with:
+        path: |
+          dl
+        key: ${{ runner.os }}-dl-${{ matrix.chip }}
+        restore-keys: |
+          ${{ runner.os }}-dl-
+
+    - name: 恢复主机工具缓存
+      uses: actions/cache@v4
+      with:
+        path: |
+          build_dir/host
+        key: ${{ runner.os }}-host-${{ matrix.repo_short }}-${{ matrix.chip }}
+        restore-keys: |
+          ${{ runner.os }}-host-
+
+    - name: 恢复target构建缓存
+      uses: actions/cache@v4
+      with:
+        path: |
+          build_dir/target-*
+        key: ${{ runner.os }}-target-${{ matrix.chip }}
+        restore-keys: |
+          ${{ runner.os }}-target-
+
+    - name: 创建临时产出目录
+      run: |
+        mkdir -p output/${{ matrix.chip }}
+
+    - name: 下载源码
+      run: |
+        git clone --depth=1 -b ${{ matrix.repo_branch }} ${{ matrix.repo_url }} wrt_src
+        rsync -a --delete wrt_src/ ./
+        rm -rf wrt_src
+
+    - name: 执行环境脚本
+      run: |
+        chmod +x scripts/script.sh
+        ./scripts/script.sh
+
+    - name: 执行分层编译（Ultra > Max > Pro）
+      run: |
+        chmod +x scripts/build.sh
+        bash scripts/build.sh ${{ matrix.repo_short }} ${{ matrix.chip }} output/${{ matrix.chip }}
+
+    - name: 保存产物到Artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: "${{ matrix.repo_short }}-${{ matrix.chip }}-output"
+        path: output/${{ matrix.chip }}
+
+    - name: 保存ccache缓存
+      if: always()
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.ccache
+        key: ${{ runner.os }}-ccache-${{ matrix.repo_short }}-${{ matrix.chip }}-${{ github.run_id }}
+
+    - name: 保存dl源包缓存
+      if: always()
+      uses: actions/cache@v4
+      with:
+        path: |
+          dl
+        key: ${{ runner.os }}-dl-${{ matrix.chip }}-${{ github.run_id }}
+
+    - name: 保存主机工具缓存
+      if: always()
+      uses: actions/cache@v4
+      with:
+        path: |
+          build_dir/host
+        key: ${{ runner.os }}-host-${{ matrix.repo_short }}-${{ matrix.chip }}-${{ github.run_id }}
+
+    - name: 保存target构建缓存
+      if: always()
+      uses: actions/cache@v4
+      with:
+        path: |
+          build_dir/target-*
+        key: ${{ runner.os }}-target-${{ matrix.chip }}-${{ github.run_id }}
+
+    - name: 上传Release
+      if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+      uses: ncipollo/release-action@v1
+      with:
+        tag: "${{ steps.release_tag.outputs.tag }}"
+        artifacts: "output/${{ matrix.chip }}/*.tar.gz,output/${{ matrix.chip }}/*.bin,output/${{ matrix.chip }}/*.config,output/${{ matrix.chip }}/*.manifest,output/${{ matrix.chip }}/*.buildinfo"
+        body: |
+          默认管理地址：192.168.111.1  
+          默认用户：root  
+          默认密码：none  
+          默认WIFI密码: 12345678  
+
+          固件包括（芯片：${{ matrix.chip }}）：京东云亚瑟、雅典娜  
+          固件内核版本：（自动获取）  
+          作者: Mary  
+          发布时间: ${{ steps.release_tag.outputs.date }}  
+          编译的luci-app列表：（自动获取）  
+          各设备的固件、${{ matrix.chip }}-config.tar.gz、${{ matrix.chip }}-log.tar.gz、${{ matrix.chip }}-app.tar.gz
+
+    - name: 计算Release Tag和时间（输出到GITHUB_ENV）
+      id: release_tag
+      run: |
+        echo "tag=$(date +'%Y%m%d')-${{ matrix.chip }}" >> $GITHUB_OUTPUT
+        echo "date=$(date +'%Y-%m-%d %H:%M:%S')" >> $GITHUB_OUTPUT
