@@ -3,13 +3,27 @@
 # 严格错误退出机制
 set -e
 
+# 确保脚本有执行权限
+chmod +x "$0"
+
 # 打印开始信息
 echo "=== OpenWrt 构建开始 ==="
 echo "芯片架构: $CHIP_ARCH"
 echo "配置文件: $CONFIG_PROFILE"
 echo "分支名称: $BRANCH_NAME"
-echo "基础版本: $BASE_VERSION"
+echo "基础系统版本: $BASE_VERSION"
 echo "当前时间: $(date)"
+
+# 基础系统版本说明：
+# 环境变量 BASE_VERSION 用于控制基础系统缓存
+# "初始版本" - 表示使用初始的基础配置编译
+# "更新版本" - 表示您已修改了基础配置文件，需要重新编译基础系统
+# 
+# 以下情况需要将 BASE_VERSION 改为"更新版本"：
+# 1. 修改了芯片基础配置（configs/ipq60xx_base.config）
+# 2. 修改了分支基础配置（configs/op_base.config, configs/imm_base.config, configs/lib_base.config）
+# 
+# 如果不修改为基础系统版本，系统会使用旧的缓存，导致您修改的配置不生效！
 
 # 检查必要的环境变量
 if [ -z "$CHIP_ARCH" ] || [ -z "$CONFIG_PROFILE" ] || [ -z "$BRANCH_NAME" ]; then
@@ -58,8 +72,8 @@ cd openwrt-src
 
 # 执行自定义脚本
 echo "=== 执行自定义脚本 ==="
-chmod +x ../scripts/scripts.sh
-../scripts/scripts.sh
+chmod +x ../scripts/script-cz.sh
+../scripts/script-cz.sh
 
 # 合并配置文件
 echo "=== 合并配置文件 ==="
@@ -121,8 +135,19 @@ else
     echo "=== 使用缓存的内核 ==="
 fi
 
-# 4. 基础系统编译 (如果缓存不存在)
-if [ ! -d "build_dir/target-*/root-*/" ]; then
+# 4. 基础系统编译 (根据基础系统版本决定)
+# 重要说明：
+# 当 BASE_VERSION 为"初始版本"时，如果存在基础系统缓存则使用缓存
+# 当 BASE_VERSION 为"更新版本"时，强制重新编译基础系统（忽略缓存）
+if [ "$BASE_VERSION" = "更新版本" ]; then
+    echo "=== 检测到基础系统版本为'更新版本'，强制重新编译基础系统 ==="
+    rm -rf build_dir/target-*/root-*/
+    rm -rf staging_dir/target-*/
+    make target/compile -j$(nproc) || {
+        echo "错误: 基础系统编译失败"
+        exit 1
+    }
+elif [ ! -d "build_dir/target-*/root-*/" ]; then
     echo "=== 编译基础系统 ==="
     make target/compile -j$(nproc) || {
         echo "错误: 基础系统编译失败"
