@@ -53,6 +53,7 @@ git clone --depth=1 https://github.com/gdy666/luci-app-lucky package/luci-app-lu
 git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo package/luci-app-momo
 git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki package/nikki
 git clone --depth=1 https://github.com/vernesong/OpenClash package/OpenClash
+git clone https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
 
 # ====== 添加kenzok8软件源并且让它的优先级最低 ======
 git clone --depth=1 https://github.com/kenzok8/small-package package/small8
