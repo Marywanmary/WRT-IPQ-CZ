@@ -12,110 +12,10 @@ set -euo pipefail
     sed -i 's/root::0:0:99999:7:::/root::0:0:99999:7:::/g' package/base-files/files/etc/shadow || true
 
 # 清理冲突包
-rm -rf feeds/luci/applications/luci-app-appfilter || true
-rm -rf feeds/luci/applications/luci-app-frpc || true
-rm -rf feeds/luci/applications/luci-app-frps || true
-rm -rf feeds/packages/net/open-app-filter || true
-rm -rf feeds/packages/net/adguardhome || true
-rm -rf feeds/packages/net/ariang || true
-rm -rf feeds/packages/net/frp || true
-rm -rf feeds/packages/lang/golang || true
-
-# ========== 1. 递归依赖检测与移除 ==========
-CONFIG_FILE="openwrt/.config"
-PKG_IN="tmp/.config-package.in"
-PROBLEM_PKGS=()
-SELF_DEP_PKGS=()
-LOOP_DEP_PKGS=()
-
-echo "===== [递归依赖包自动检测&移除] ====="
-
-# 1.1 检测已知递归依赖包（可手动维护补充）
-KNOWN_PROBLEM_PKGS=(luci-app-torbp luci-app-alist luci-app-qbittorrent luci-app-nat6-helper ua2f natmap)
-for pkg in "${KNOWN_PROBLEM_PKGS[@]}"; do
-  if grep -q "CONFIG_PACKAGE_${pkg}=y" "$CONFIG_FILE" 2>/dev/null; then
-    PROBLEM_PKGS+=("$pkg")
-    sed -i "/CONFIG_PACKAGE_${pkg}=y/d" "$CONFIG_FILE"
-  fi
+UNWANTED_PKGS=(luci-app-appfilter luci-app-frpc luci-app-frps open-app-filter adguardhome ariang frp golang)
+for pkg in "${UNWANTED_PKGS[@]}"; do
+  rm -rf package/small8/$pkg feeds/luci/applications/$pkg feeds/packages/net/$pkg package/$pkg || true
 done
-
-# 1.2 自动检测自依赖（PACKAGE_xxx depends/selects PACKAGE_xxx）
-if [[ -f "$PKG_IN" ]]; then
-  while read -r sym; do
-    pkg="${sym#PACKAGE_}"
-    if grep -Pzo "config $sym\n(.|\n)*depends on $sym" "$PKG_IN"; then
-      SELF_DEP_PKGS+=("$pkg")
-      sed -i "/CONFIG_${sym}=y/d" "$CONFIG_FILE"
-    fi
-  done < <(grep -Po '^config PACKAGE_[^\s]+' "$PKG_IN" | cut -d' ' -f2)
-fi
-
-# 1.3 自动检测互相select导致的环依赖（A select B, B select A）
-if [[ -f "$PKG_IN" ]]; then
-  # 提取所有 select 关系
-  awk '/^config PACKAGE_/ {pkg=$2} /select PACKAGE_/ {print pkg, $2}' "$PKG_IN" | while read a b; do
-    # b 格式是PACKAGE_xxx
-    # 检查 b 是否也 select a
-    if grep -Pzo "config $b\n(.|\n)*select $a" "$PKG_IN"; then
-      pkg1="${a#PACKAGE_}"
-      pkg2="${b#PACKAGE_}"
-      LOOP_DEP_PKGS+=("${pkg1}<->${pkg2}")
-      sed -i "/CONFIG_${a}=y/d" "$CONFIG_FILE"
-      sed -i "/CONFIG_${b}=y/d" "$CONFIG_FILE"
-    fi
-  done
-fi
-
-# 1.4 输出递归依赖清单
-if [[ ${#PROBLEM_PKGS[@]} -eq 0 && ${#SELF_DEP_PKGS[@]} -eq 0 && ${#LOOP_DEP_PKGS[@]} -eq 0 ]]; then
-  echo "未检测到递归依赖包，无需处理。"
-else
-  echo "已自动移除以下递归依赖包，避免编译失败："
-  for pkg in "${PROBLEM_PKGS[@]}"; do
-    echo "  - $pkg (已知问题包)"
-  done
-  for pkg in "${SELF_DEP_PKGS[@]}"; do
-    echo "  - $pkg (自依赖包)"
-  done
-  for loop in "${LOOP_DEP_PKGS[@]}"; do
-    echo "  - $loop (互相select导致的环依赖)"
-  done
-fi
-echo "===== [递归依赖包检测&修正完成] ====="
-
-# ========== 2. 包优先级自动调整 ==========
-echo "===== [包优先级自动调整] ====="
-if [ -d package/small8 ]; then
-  for spkg in package/small8/*; do
-    [ -d "$spkg" ] || continue
-    pname=$(basename "$spkg")
-    if [ -d "feeds/packages/$pname" ] || [ -d "feeds/luci/applications/$pname" ]; then
-      echo "检测到 $pname 主feeds和small8均有，保留主feeds，移除small8/$pname"
-      rm -rf "package/small8/$pname"
-    fi
-  done
-fi
-echo "===== [优先级调整完成] ====="
-
-# ========== 3. 缺失依赖包自动移除 ==========
-echo "===== [缺失依赖包自动批量移除] ====="
-MISSING_DEP_PKGS=()
-if [ -d package/small8 ]; then   # <--- 新增防御：small8必须存在
-  find package/small8 -type f -name 'Makefile' | while read mkfile; do
-    grep -E 'DEPENDS|select PACKAGE_' "$mkfile" | grep -oE '[a-zA-Z0-9_-]+' | while read dep; do
-      if [[ "$dep" =~ ^(luci-app-|lib|kmod-|shadowsocks|v2ray|trojan|boost|nginx|openclash|etc)$ ]]; then continue; fi
-      if ! find feeds/ package/small8/ -type d -name "$dep" | grep -q .; then
-        parentdir=$(dirname "$mkfile")
-        if [[ ! " ${MISSING_DEP_PKGS[*]} " =~ " $parentdir " ]]; then
-          MISSING_DEP_PKGS+=("$parentdir")
-          echo "检测到 $parentdir 依赖缺失包: $dep，已移除"
-          rm -rf "$parentdir"
-        fi
-      fi
-    done
-  done
-fi
-echo "===== [缺失依赖包处理完成] ====="
 
 # 稀疏克隆函数
 git_sparse_clone() {
@@ -156,6 +56,12 @@ git clone --depth=1 https://github.com/vernesong/OpenClash package/OpenClash
 
 # ====== 添加kenzok8软件源并且让它的优先级最低 ======
 git clone --depth=1 https://github.com/kenzok8/small-package package/small8
+
+# 再次清理冲突包
+UNWANTED_PKGS=(luci-app-torbp luci-app-alist luci-app-qbittorrent luci-app-nat6-helper ua2f natmap)
+for pkg in "${UNWANTED_PKGS[@]}"; do
+  rm -rf package/small8/$pkg feeds/luci/applications/$pkg feeds/packages/net/$pkg package/$pkg || true
+done
 
 # feeds更新与安装
 [ -x ./scripts/feeds ] && ./scripts/feeds update -a && ./scripts/feeds install -a
