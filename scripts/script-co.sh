@@ -84,13 +84,11 @@ fi
 echo "===== [递归依赖包检测&修正完成] ====="
 
 # ========== 2. 包优先级自动调整 ==========
-# 只保留主feeds和small8同名包时优先主feeds
 echo "===== [包优先级自动调整] ====="
 if [ -d package/small8 ]; then
   for spkg in package/small8/*; do
     [ -d "$spkg" ] || continue
     pname=$(basename "$spkg")
-    # 主feeds有同名包则移除small8的
     if [ -d "feeds/packages/$pname" ] || [ -d "feeds/luci/applications/$pname" ]; then
       echo "检测到 $pname 主feeds和small8均有，保留主feeds，移除small8/$pname"
       rm -rf "package/small8/$pname"
@@ -101,23 +99,22 @@ echo "===== [优先级调整完成] ====="
 
 # ========== 3. 缺失依赖包自动移除 ==========
 echo "===== [缺失依赖包自动批量移除] ====="
-# 检查所有Makefile依赖的包是否存在，不存在则移除上层包
 MISSING_DEP_PKGS=()
-find package/small8 -type f -name 'Makefile' | while read mkfile; do
-  # 搜索 DEPENDS或者select PACKAGE_ 依赖的包名
-  grep -E 'DEPENDS|select PACKAGE_' "$mkfile" | grep -oE '[a-zA-Z0-9_-]+' | while read dep; do
-    # 判断是否主feeds或small8有该包，否则缺失
-    if [[ "$dep" =~ ^(luci-app-|lib|kmod-|shadowsocks|v2ray|trojan|boost|nginx|openclash|etc)$ ]]; then continue; fi
-    if ! find feeds/ package/small8/ -type d -name "$dep" | grep -q .; then
-      parentdir=$(dirname "$mkfile")
-      if [[ ! " ${MISSING_DEP_PKGS[*]} " =~ " $parentdir " ]]; then
-        MISSING_DEP_PKGS+=("$parentdir")
-        echo "检测到 $parentdir 依赖缺失包: $dep，已移除"
-        rm -rf "$parentdir"
+if [ -d package/small8 ]; then   # <--- 新增防御：small8必须存在
+  find package/small8 -type f -name 'Makefile' | while read mkfile; do
+    grep -E 'DEPENDS|select PACKAGE_' "$mkfile" | grep -oE '[a-zA-Z0-9_-]+' | while read dep; do
+      if [[ "$dep" =~ ^(luci-app-|lib|kmod-|shadowsocks|v2ray|trojan|boost|nginx|openclash|etc)$ ]]; then continue; fi
+      if ! find feeds/ package/small8/ -type d -name "$dep" | grep -q .; then
+        parentdir=$(dirname "$mkfile")
+        if [[ ! " ${MISSING_DEP_PKGS[*]} " =~ " $parentdir " ]]; then
+          MISSING_DEP_PKGS+=("$parentdir")
+          echo "检测到 $parentdir 依赖缺失包: $dep，已移除"
+          rm -rf "$parentdir"
+        fi
       fi
-    fi
+    done
   done
-done
+fi
 echo "===== [缺失依赖包处理完成] ====="
 
 # 稀疏克隆函数
