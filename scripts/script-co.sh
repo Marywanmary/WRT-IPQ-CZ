@@ -21,6 +21,51 @@ rm -rf feeds/packages/net/ariang || true
 rm -rf feeds/packages/net/frp || true
 rm -rf feeds/packages/lang/golang || true
 
+# ====== 自动检测并移除递归依赖包 ======
+echo "===== [递归依赖包自动检测&移除] ====="
+CONFIG_FILE="openwrt/.config"
+REMOVE_LIST=()
+
+# 常见递归依赖包
+RECURSIVE_PACKAGES=("luci-app-torbp" "luci-app-alist")
+
+# 检查并移除已知递归依赖包
+if [ -f "$CONFIG_FILE" ]; then
+  for pkg in "${RECURSIVE_PACKAGES[@]}"; do
+    if grep -q "CONFIG_PACKAGE_${pkg}=y" "$CONFIG_FILE"; then
+      REMOVE_LIST+=("$pkg")
+      sed -i "/CONFIG_PACKAGE_${pkg}=y/d" "$CONFIG_FILE"
+    fi
+  done
+  # 自动检测所有自依赖（PACKAGE_foo depends on PACKAGE_foo）
+  if [ -f tmp/.config-package.in ]; then
+    while read -r sym; do
+      pkg="${sym#PACKAGE_}"
+      if grep -q "CONFIG_${sym}=y" "$CONFIG_FILE"; then
+        REMOVE_LIST+=("$pkg")
+        sed -i "/CONFIG_${sym}=y/d" "$CONFIG_FILE"
+      fi
+    done < <(grep -Po '^config PACKAGE_[^\s]+' tmp/.config-package.in | cut -d' ' -f2 | while read sym; do
+      if grep -Pq "^config $sym\b" tmp/.config-package.in && grep -Pzo "config $sym\n(.|\n)*?depends on $sym" tmp/.config-package.in; then
+        echo "$sym"
+      fi
+    done)
+  fi
+  # 输出处理清单
+  if [ "${#REMOVE_LIST[@]}" -eq 0 ]; then
+    echo "未检测到递归依赖包，无需处理。"
+  else
+    echo "已自动移除以下递归依赖包，避免编译失败："
+    for pkg in "${REMOVE_LIST[@]}"; do
+      echo "  - $pkg"
+    done
+    echo "如需启用这些包，请修正其依赖关系后再添加。"
+  fi
+else
+  echo "未找到 $CONFIG_FILE，跳过递归依赖检测"
+fi
+echo "===== [递归依赖包检测&修正完成] ====="
+
 # 稀疏克隆函数
 git_sparse_clone() {
   branch="$1" repourl="$2" && shift 2
