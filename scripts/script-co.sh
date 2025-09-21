@@ -21,50 +21,104 @@ rm -rf feeds/packages/net/ariang || true
 rm -rf feeds/packages/net/frp || true
 rm -rf feeds/packages/lang/golang || true
 
-# ====== 自动检测并移除递归依赖包 ======
-echo "===== [递归依赖包自动检测&移除] ====="
+# ========== 1. 递归依赖检测与移除 ==========
 CONFIG_FILE="openwrt/.config"
-REMOVE_LIST=()
+PKG_IN="tmp/.config-package.in"
+PROBLEM_PKGS=()
+SELF_DEP_PKGS=()
+LOOP_DEP_PKGS=()
 
-# 常见递归依赖包
-RECURSIVE_PACKAGES=("luci-app-torbp" "luci-app-alist")
+echo "===== [递归依赖包自动检测&移除] ====="
 
-# 检查并移除已知递归依赖包
-if [ -f "$CONFIG_FILE" ]; then
-  for pkg in "${RECURSIVE_PACKAGES[@]}"; do
-    if grep -q "CONFIG_PACKAGE_${pkg}=y" "$CONFIG_FILE"; then
-      REMOVE_LIST+=("$pkg")
-      sed -i "/CONFIG_PACKAGE_${pkg}=y/d" "$CONFIG_FILE"
+# 1.1 检测已知递归依赖包（可手动维护补充）
+KNOWN_PROBLEM_PKGS=(luci-app-torbp luci-app-alist luci-app-qbittorrent luci-app-nat6-helper ua2f natmap)
+for pkg in "${KNOWN_PROBLEM_PKGS[@]}"; do
+  if grep -q "CONFIG_PACKAGE_${pkg}=y" "$CONFIG_FILE" 2>/dev/null; then
+    PROBLEM_PKGS+=("$pkg")
+    sed -i "/CONFIG_PACKAGE_${pkg}=y/d" "$CONFIG_FILE"
+  fi
+done
+
+# 1.2 自动检测自依赖（PACKAGE_xxx depends/selects PACKAGE_xxx）
+if [[ -f "$PKG_IN" ]]; then
+  while read -r sym; do
+    pkg="${sym#PACKAGE_}"
+    if grep -Pzo "config $sym\n(.|\n)*depends on $sym" "$PKG_IN"; then
+      SELF_DEP_PKGS+=("$pkg")
+      sed -i "/CONFIG_${sym}=y/d" "$CONFIG_FILE"
+    fi
+  done < <(grep -Po '^config PACKAGE_[^\s]+' "$PKG_IN" | cut -d' ' -f2)
+fi
+
+# 1.3 自动检测互相select导致的环依赖（A select B, B select A）
+if [[ -f "$PKG_IN" ]]; then
+  # 提取所有 select 关系
+  awk '/^config PACKAGE_/ {pkg=$2} /select PACKAGE_/ {print pkg, $2}' "$PKG_IN" | while read a b; do
+    # b 格式是PACKAGE_xxx
+    # 检查 b 是否也 select a
+    if grep -Pzo "config $b\n(.|\n)*select $a" "$PKG_IN"; then
+      pkg1="${a#PACKAGE_}"
+      pkg2="${b#PACKAGE_}"
+      LOOP_DEP_PKGS+=("${pkg1}<->${pkg2}")
+      sed -i "/CONFIG_${a}=y/d" "$CONFIG_FILE"
+      sed -i "/CONFIG_${b}=y/d" "$CONFIG_FILE"
     fi
   done
-  # 自动检测所有自依赖（PACKAGE_foo depends on PACKAGE_foo）
-  if [ -f tmp/.config-package.in ]; then
-    while read -r sym; do
-      pkg="${sym#PACKAGE_}"
-      if grep -q "CONFIG_${sym}=y" "$CONFIG_FILE"; then
-        REMOVE_LIST+=("$pkg")
-        sed -i "/CONFIG_${sym}=y/d" "$CONFIG_FILE"
-      fi
-    done < <(grep -Po '^config PACKAGE_[^\s]+' tmp/.config-package.in | cut -d' ' -f2 | while read sym; do
-      if grep -Pq "^config $sym\b" tmp/.config-package.in && grep -Pzo "config $sym\n(.|\n)*?depends on $sym" tmp/.config-package.in; then
-        echo "$sym"
-      fi
-    done)
-  fi
-  # 输出处理清单
-  if [ "${#REMOVE_LIST[@]}" -eq 0 ]; then
-    echo "未检测到递归依赖包，无需处理。"
-  else
-    echo "已自动移除以下递归依赖包，避免编译失败："
-    for pkg in "${REMOVE_LIST[@]}"; do
-      echo "  - $pkg"
-    done
-    echo "如需启用这些包，请修正其依赖关系后再添加。"
-  fi
+fi
+
+# 1.4 输出递归依赖清单
+if [[ ${#PROBLEM_PKGS[@]} -eq 0 && ${#SELF_DEP_PKGS[@]} -eq 0 && ${#LOOP_DEP_PKGS[@]} -eq 0 ]]; then
+  echo "未检测到递归依赖包，无需处理。"
 else
-  echo "未找到 $CONFIG_FILE，跳过递归依赖检测"
+  echo "已自动移除以下递归依赖包，避免编译失败："
+  for pkg in "${PROBLEM_PKGS[@]}"; do
+    echo "  - $pkg (已知问题包)"
+  done
+  for pkg in "${SELF_DEP_PKGS[@]}"; do
+    echo "  - $pkg (自依赖包)"
+  done
+  for loop in "${LOOP_DEP_PKGS[@]}"; do
+    echo "  - $loop (互相select导致的环依赖)"
+  done
 fi
 echo "===== [递归依赖包检测&修正完成] ====="
+
+# ========== 2. 包优先级自动调整 ==========
+# 只保留主feeds和small8同名包时优先主feeds
+echo "===== [包优先级自动调整] ====="
+if [ -d package/small8 ]; then
+  for spkg in package/small8/*; do
+    [ -d "$spkg" ] || continue
+    pname=$(basename "$spkg")
+    # 主feeds有同名包则移除small8的
+    if [ -d "feeds/packages/$pname" ] || [ -d "feeds/luci/applications/$pname" ]; then
+      echo "检测到 $pname 主feeds和small8均有，保留主feeds，移除small8/$pname"
+      rm -rf "package/small8/$pname"
+    fi
+  done
+fi
+echo "===== [优先级调整完成] ====="
+
+# ========== 3. 缺失依赖包自动移除 ==========
+echo "===== [缺失依赖包自动批量移除] ====="
+# 检查所有Makefile依赖的包是否存在，不存在则移除上层包
+MISSING_DEP_PKGS=()
+find package/small8 -type f -name 'Makefile' | while read mkfile; do
+  # 搜索 DEPENDS或者select PACKAGE_ 依赖的包名
+  grep -E 'DEPENDS|select PACKAGE_' "$mkfile" | grep -oE '[a-zA-Z0-9_-]+' | while read dep; do
+    # 判断是否主feeds或small8有该包，否则缺失
+    if [[ "$dep" =~ ^(luci-app-|lib|kmod-|shadowsocks|v2ray|trojan|boost|nginx|openclash|etc)$ ]]; then continue; fi
+    if ! find feeds/ package/small8/ -type d -name "$dep" | grep -q .; then
+      parentdir=$(dirname "$mkfile")
+      if [[ ! " ${MISSING_DEP_PKGS[*]} " =~ " $parentdir " ]]; then
+        MISSING_DEP_PKGS+=("$parentdir")
+        echo "检测到 $parentdir 依赖缺失包: $dep，已移除"
+        rm -rf "$parentdir"
+      fi
+    fi
+  done
+done
+echo "===== [缺失依赖包处理完成] ====="
 
 # 稀疏克隆函数
 git_sparse_clone() {
