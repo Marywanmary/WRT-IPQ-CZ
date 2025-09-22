@@ -16,11 +16,13 @@ echo "===== 错误日志 - $(date) =====" > "$ERROR_LOG_FILE"
 
 # 日志函数
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+    local message="$1"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $message" | tee -a "$LOG_FILE"
 }
 
 error_log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 错误: $1" | tee -a "$LOG_FILE" "$ERROR_LOG_FILE"
+    local message="$1"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 错误: $message" | tee -a "$LOG_FILE" "$ERROR_LOG_FILE"
 }
 
 # 错误处理函数
@@ -41,15 +43,23 @@ log "开始准备OpenWrt编译环境"
 log "修改默认配置"
 sed -i 's/192.168.1.1/192.168.111.1/g' package/base-files/files/bin/config_generate
 sed -i "s/hostname='.*'/hostname='WRT'/g" package/base-files/files/bin/config_generate
+# 禁用修改编译署名的sed命令
 # sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
 
 # 修改管理员密码为空
 log "修改管理员密码为空"
 sed -i 's/root:::0:0:99999:7:::/root:$1$Vd3dV5bF$XxvYzJ7s8uK9kLpMnQoNj0:0:0:99999:7:::/g' package/base-files/files/etc/shadow
 
-# # 修改无线密码为空
-# log "修改无线密码为空"
-# sed -i 's/option encryption .psk2+ccmp./option encryption .none./g' package/kernel/mac80211/files/lib/wifi/mac80211.sh
+# 修改无线密码为空
+log "修改无线密码为空"
+# 查找无线配置文件并修改
+WIFI_CONFIG_FILES=$(find . -name "*.sh" -path "*/mac80211/*" 2>/dev/null | head -1)
+if [ -n "$WIFI_CONFIG_FILES" ]; then
+    log "找到无线配置文件: $WIFI_CONFIG_FILES"
+    sed -i 's/option encryption .psk2+ccmp./option encryption .none./g' "$WIFI_CONFIG_FILES"
+else
+    log "未找到无线配置文件，跳过修改无线密码"
+fi
 
 # 移除要替换的包
 log "移除要替换的包"
@@ -64,33 +74,43 @@ rm -rf feeds/packages/lang/golang
 
 # Git稀疏克隆，只克隆指定目录到本地
 function git_sparse_clone() {
-    branch="$1" repourl="$2" && shift 2
-    log "稀疏克隆: $repourl (分支: $branch, 目录: $@)"
+    local branch="$1"
+    local repourl="$2"
+    shift 2
+    local dirs=("$@")
+    
+    # 保存当前目录和日志文件路径
+    local current_dir="$(pwd)"
+    local log_file="$current_dir/$LOG_FILE"
+    
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 稀疏克隆: $repourl (分支: $branch, 目录: ${dirs[*]})" | tee -a "$log_file"
     
     # 创建临时目录
-    temp_dir=$(mktemp -d)
+    local temp_dir=$(mktemp -d)
     cd "$temp_dir"
     
     # 克隆仓库
     git clone --depth=1 -b "$branch" --single-branch --filter=blob:none --sparse "$repourl"
     
     # 获取仓库名称
-    repodir=$(echo "$repourl" | awk -F '/' '{print $(NF)}')
+    local repodir=$(echo "$repourl" | awk -F '/' '{print $(NF)}')
     cd "$repodir"
     
     # 设置稀疏检出
-    git sparse-checkout set "$@"
+    git sparse-checkout set "${dirs[@]}"
+    
+    # 返回原目录
+    cd "$current_dir"
     
     # 移动文件到目标目录
-    for dir in "$@"; do
-        if [ -d "$dir" ]; then
-            mv -f "$dir" "$OLDPWD/package/"
-            log "已移动: $dir"
+    for dir in "${dirs[@]}"; do
+        if [ -d "$temp_dir/$repodir/$dir" ]; then
+            mv -f "$temp_dir/$repodir/$dir" "package/"
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] 已移动: $dir" | tee -a "$log_file"
         fi
     done
     
-    # 返回原目录并清理
-    cd "$OLDPWD"
+    # 清理临时目录
     rm -rf "$temp_dir"
 }
 
