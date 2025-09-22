@@ -2,6 +2,7 @@
 # OpenWrt 自定义脚本
 # 严格错误退出机制
 set -e
+set -o pipefail
 
 # 确保脚本有执行权限
 chmod +x "$0"
@@ -22,6 +23,13 @@ echo "=== 执行自定义脚本 ==="
 UNWANTED_PKGS=(luci-app-appfilter luci-app-frpc luci-app-frps open-app-filter adguardhome ariang frp golang)
 for pkg in "${UNWANTED_PKGS[@]}"; do
   rm -rf package/small8/$pkg feeds/luci/applications/$pkg feeds/packages/net/$pkg package/$pkg || true
+done
+
+# 清理存在递归依赖的包
+RECURSIVE_DEP_PKGS=(natmap libcurl clixon libxml2 nginx-ssl ariang-nginx libopenssl ua2f mentohust)
+for pkg in "${RECURSIVE_DEP_PKGS[@]}"; do
+  echo "清理递归依赖包: $pkg"
+  rm -rf package/small8/$pkg feeds/luci/applications/$pkg feeds/packages/net/$pkg feeds/packages/libs/$pkg package/$pkg || true
 done
 
 # 稀疏克隆函数
