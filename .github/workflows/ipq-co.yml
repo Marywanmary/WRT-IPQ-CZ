@@ -86,21 +86,60 @@ jobs:
     - name: 检查 scripts 目录内容
       run: ls -l ./scripts || echo "scripts目录不存在"
 
-    - name: 下载源码（覆盖所有内容，保留 scripts 目录）
+    - name: 下载源码（改进错误处理）
       run: |
-        git clone --depth=1 -b ${{ matrix.repo_branch }} ${{ matrix.repo_url }} wrt_src
-        rsync -a wrt_src/ . || ( [ $? -eq 24 ] && echo "rsync警告: 文件消失, 忽略" )
+        set -e
+        echo "正在下载源码..."
+        if ! git clone --depth=1 -b ${{ matrix.repo_branch }} ${{ matrix.repo_url }} wrt_src; then
+          echo "错误: 源码下载失败"
+          exit 1
+        fi
+        
+        echo "正在同步源码文件..."
+        if ! rsync -a wrt_src/ .; then
+          if [ $? -ne 24 ]; then
+            echo "错误: 源码同步失败"
+            exit 1
+          fi
+          echo "警告: 部分文件在同步过程中消失，已忽略"
+        fi
+        
         rm -rf wrt_src
+        echo "源码准备完成"
 
     - name: 一次性授权所有脚本
       run: |
-        find ./scripts -name "*.sh" -exec chmod +x {} \; || true
+        find ./scripts -name "*.sh" -exec chmod +x {} \; || echo "警告: 部分脚本授权失败"
 
-    - name: 执行环境脚本
-      run: ./scripts/script-co.sh
+    - name: 执行环境脚本（添加错误检查）
+      run: |
+        echo "正在执行环境脚本..."
+        if [ -f ./scripts/script-co.sh ]; then
+          chmod +x ./scripts/script-co.sh
+          if ! ./scripts/script-co.sh; then
+            echo "错误: 环境脚本执行失败"
+            exit 1
+          fi
+        else
+          echo "错误: 环境脚本不存在"
+          exit 1
+        fi
+        echo "环境脚本执行完成"
 
     - name: 执行分层编译（Ultra > Max > Pro）
-      run: ./scripts/build-co.sh ${{ matrix.repo_short }} ${{ matrix.chip }} output/${{ matrix.chip }}
+      run: |
+        echo "正在执行分层编译..."
+        if [ -f ./scripts/build-co.sh ]; then
+          chmod +x ./scripts/build-co.sh
+          if ! ./scripts/build-co.sh ${{ matrix.repo_short }} ${{ matrix.chip }} output/${{ matrix.chip }}; then
+            echo "错误: 分层编译失败"
+            exit 1
+          fi
+        else
+          echo "错误: 编译脚本不存在"
+          exit 1
+        fi
+        echo "分层编译完成"
 
     - name: 保存产物到Artifact
       if: always()
@@ -140,6 +179,14 @@ jobs:
         path: |
           build_dir/target-*
         key: ${{ runner.os }}-target-${{ matrix.chip }}-${{ github.run_id }}
+
+    - name: 清理临时文件
+      if: always()
+      run: |
+        echo "正在清理临时文件..."
+        rm -rf /tmp/*
+        docker system prune -f
+        echo "临时文件清理完成"
 
     - name: 计算Release Tag和时间
       id: release_tag
