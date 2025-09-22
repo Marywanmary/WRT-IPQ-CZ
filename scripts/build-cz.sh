@@ -67,10 +67,16 @@ handle_error() {
     log "最后50行日志:"
     tail -n 50 "$LOG_FILE" | tee -a "$ERROR_LOG_FILE"
     
-    # 检查是否有编译错误日志
-    if [ -d "logs" ]; then
-        log "编译错误日志:"
-        find logs -name "*.log" -exec echo "=== {} ===" \; -exec tail -n 20 {} \;
+    # 检查工具链编译错误
+    log "检查工具链编译错误:"
+    if [ -d "build_dir" ]; then
+        find build_dir -name "*.log" -path "*/tools/*" -exec echo "=== {} ===" \; -exec tail -n 20 {} \; | tee -a "$ERROR_LOG_FILE"
+    fi
+    
+    # 检查是否有编译失败的工具
+    log "检查编译失败的工具:"
+    if [ -d "build_dir" ]; then
+        find build_dir -name ".built" -path "*/tools/*" -exec sh -c 'if [ ! -f {} ]; then echo "工具编译失败: $(dirname {})"; fi' \; | tee -a "$ERROR_LOG_FILE"
     fi
     
     exit $exit_code
