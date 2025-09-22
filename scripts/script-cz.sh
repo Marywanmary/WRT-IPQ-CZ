@@ -134,6 +134,8 @@ if [ -d "package/net/frp" ]; then
     log "已移动frp到feeds/packages/net/"
 fi
 
+# 确保目标目录存在
+mkdir -p feeds/luci/applications
 git_sparse_clone frp https://github.com/laipeng668/luci applications/luci-app-frpc applications/luci-app-frps
 # 将luci-app-frpc和luci-app-frps移动到feeds/luci/applications
 if [ -d "package/applications/luci-app-frpc" ]; then
@@ -150,7 +152,7 @@ git clone --depth=1 https://github.com/gdy666/luci-app-lucky package/luci-app-lu
 git clone --depth=1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
 git clone --depth=1 https://github.com/lwb1978/openwrt-gecoosac package/openwrt-gecoosac
 git clone --depth=1 https://github.com/NONGFAH/luci-app-athena-led package/luci-app-athena-led
-chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena_led
+chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena-led
 
 # Mary定制包
 log "克隆Mary定制软件包"
