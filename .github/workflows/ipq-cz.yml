@@ -21,6 +21,18 @@ on:
         options:
         - ubuntu-22.04
         - ubuntu-24.04
+      compile_stage:
+        description: '编译阶段'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+        - full          # 完整编译
+        - toolchain     # 从工具链开始
+        - kernel        # 从内核开始
+        - base          # 从基础系统开始
+        - packages      # 从软件包开始
+        - image         # 从固件生成开始
 
 env:
   # 分支信息配置
@@ -63,31 +75,14 @@ jobs:
       image: ${{ github.event.inputs.runner_os == 'ubuntu-24.04' && 'ubuntu:24.04' || 'ubuntu:22.04' }}
     steps:
       - name: 清理磁盘空间
-        run: |
-          echo "清理磁盘空间..."
-          
-          # 删除不需要的软件包（容器内已经是root用户，不需要sudo）
-          apt-get remove -y '^aspnetcore-.*' --fix-missing || true
-          apt-get remove -y '^dotnet-.*' --fix-missing || true
-          apt-get remove -y '^llvm-.*' --fix-missing || true
-          apt-get remove -y 'php.*' --fix-missing || true
-          apt-get remove -y '^mongodb-.*' --fix-missing || true
-          apt-get remove -y azure-cli google-chrome-stable firefox powershell mono-devel libgl1-mesa-dri --fix-missing || true
-          
-          # 清理包管理器缓存
-          apt-get autoremove -y || true
-          apt-get clean || true
-          
-          # 删除不需要的目录
-          rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost || true
-          
-          # 清理Docker缓存（如果可用）
-          if command -v docker &> /dev/null; then
-            docker system prune -af || true
-          fi
-          
-          # 显示磁盘使用情况
-          df -h
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
 
       - name: 检出代码
         uses: actions/checkout@v4
@@ -105,7 +100,37 @@ jobs:
           # 设置ccache目录
           mkdir -p /tmp/ccache
 
-      - name: 设置缓存
+      - name: 设置工具链缓存
+        if: ${{ github.event.inputs.compile_stage != 'full' }}
+        uses: actions/cache@v3
+        with:
+          path: /tmp/build/staging_dir
+          key: ${{ runner.os }}-toolchain-${{ matrix.branch.short }}-${{ github.event.inputs.arch || 'ipq60xx' }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-toolchain-${{ matrix.branch.short }}-${{ github.event.inputs.arch || 'ipq60xx' }}-
+            ${{ runner.os }}-toolchain-${{ matrix.branch.short }}-
+
+      - name: 设置内核缓存
+        if: ${{ github.event.inputs.compile_stage == 'base' || github.event.inputs.compile_stage == 'packages' || github.event.inputs.compile_stage == 'image' }}
+        uses: actions/cache@v3
+        with:
+          path: /tmp/build/build_dir/target-*
+          key: ${{ runner.os }}-kernel-${{ matrix.branch.short }}-${{ github.event.inputs.arch || 'ipq60xx' }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-kernel-${{ matrix.branch.short }}-${{ github.event.inputs.arch || 'ipq60xx' }}-
+            ${{ runner.os }}-kernel-${{ matrix.branch.short }}-
+
+      - name: 设置基础系统缓存
+        if: ${{ github.event.inputs.compile_stage == 'packages' || github.event.inputs.compile_stage == 'image' }}
+        uses: actions/cache@v3
+        with:
+          path: /tmp/build/build_dir/host-*
+          key: ${{ runner.os }}-base-${{ matrix.branch.short }}-${{ github.event.inputs.arch || 'ipq60xx' }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-base-${{ matrix.branch.short }}-${{ github.event.inputs.arch || 'ipq60xx' }}-
+            ${{ runner.os }}-base-${{ matrix.branch.short }}-
+
+      - name: 设置ccache缓存
         uses: actions/cache@v3
         with:
           path: /tmp/ccache
@@ -142,6 +167,7 @@ jobs:
           export BRANCH="${{ matrix.branch.name }}"
           export BRANCH_SHORT="${{ matrix.branch.short }}"
           export WORKSPACE="$GITHUB_WORKSPACE"
+          export COMPILE_STAGE="${{ github.event.inputs.compile_stage }}"
           
           # 授权所有.sh脚本文件
           chmod +x $GITHUB_WORKSPACE/openwrt-build/scripts/*.sh
@@ -283,6 +309,7 @@ jobs:
         run: |
           ARCH="${{ github.event.inputs.arch || 'ipq60xx' }}"
           DATE_TAG="${{ needs.prepare.outputs.date-tag }}"
+          COMPILE_STAGE="${{ github.event.inputs.compile_stage }}"
           
           # 创建发布说明文件
           cat > release/NOTES.md << EOF
@@ -295,6 +322,7 @@ jobs:
           
           **固件包括**: $ARCH 的京东云亚瑟、雅典娜  
           
+          **编译阶段**: $COMPILE_STAGE  
           **作者**: Mary  
           **发布时间**: $(date +'%Y-%m-%d %H:%M:%S')  
           
