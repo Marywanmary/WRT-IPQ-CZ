@@ -128,6 +128,28 @@ cat "$PROFILE_CONFIG" >> "$CONFIG_FILE"
 echo "=== 应用配置并解决冲突 ==="
 make defconfig
 
+# 禁用存在递归依赖的包
+echo "=== 禁用存在递归依赖的包 ==="
+RECURSIVE_DEP_PKGS=(
+    "natmap"
+    "libcurl"
+    "clixon"
+    "libxml2"
+    "nginx-ssl"
+    "ariang-nginx"
+    "libopenssl"
+    "ua2f"
+    "mentohust"
+)
+
+for pkg in "${RECURSIVE_DEP_PKGS[@]}"; do
+    echo "禁用包: $pkg"
+    echo "# CONFIG_PACKAGE_$pkg is not set" >> .config
+done
+
+# 重新应用配置
+make defconfig
+
 # 验证配置
 echo "=== 验证配置 ==="
 if ! ./scripts/diffconfig.sh > /dev/null; then
@@ -161,8 +183,22 @@ export STAGING_DIR_TARGET="$(pwd)/staging_dir/target-$(grep CONFIG_TARGET_ARCH .
 
 # 验证工具链是否可用
 if ! command -v aarch64-openwrt-linux-musl-gcc &> /dev/null; then
-    echo "错误: 交叉编译器不可用"
-    exit 1
+    echo "错误: 交叉编译器不可用，尝试重新编译工具链..."
+    rm -rf staging_dir
+    make toolchain/install -j$(nproc) || {
+        echo "错误: 工具链重新编译失败"
+        exit 1
+    }
+    # 重新设置环境变量
+    export PATH="$(pwd)/staging_dir/host/bin:$PATH"
+    export STAGING_DIR_HOST="$(pwd)/staging_dir/host"
+    export STAGING_DIR_TARGET="$(pwd)/staging_dir/target-$(grep CONFIG_TARGET_ARCH .config | cut -d'"' -f2)_$(grep CONFIG_TARGET_SUFFIX .config | cut -d'"' -f2)"
+    
+    # 再次验证
+    if ! command -v aarch64-openwrt-linux-musl-gcc &> /dev/null; then
+        echo "错误: 交叉编译器仍然不可用"
+        exit 1
+    fi
 fi
 
 # 2. 依赖包下载 (添加重试机制)
