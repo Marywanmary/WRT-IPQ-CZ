@@ -122,6 +122,18 @@ jobs:
             toolchain-${{ runner.os }}-${{ env.CHIP_ARCH }}-
             toolchain-${{ runner.os }}-
 
+      - name: 验证工具链缓存
+        run: |
+          if [ -d "openwrt-build/staging_dir/host/bin" ]; then
+            echo "工具链缓存存在"
+            ls -la openwrt-build/staging_dir/host/bin/ | grep aarch64-openwrt-linux-musl-gcc || {
+              echo "警告: 交叉编译器不在缓存中，将重新编译工具链"
+              rm -rf openwrt-build/staging_dir
+            }
+          else
+            echo "工具链缓存不存在，将重新编译工具链"
+          fi
+
       - name: 恢复依赖包缓存
         uses: actions/cache@v3
         with:
@@ -404,7 +416,19 @@ jobs:
           key: toolchain-${{ runner.os }}-${{ env.CHIP_ARCH }}-${{ env.UBUNTU_VERSION }}
           restore-keys: |
             toolchain-${{ runner.os }}-${{ env.CHIP_ARCH }}-
-            toolchain-${{ runner.os }}-
+            tool-chain-${{ runner.os }}-
+
+      - name: 验证工具链缓存
+        run: |
+          if [ -d "openwrt-build/staging_dir/host/bin" ]; then
+            echo "工具链缓存存在"
+            ls -la openwrt-build/staging_dir/host/bin/ | grep aarch64-openwrt-linux-musl-gcc || {
+              echo "警告: 交叉编译器不在缓存中，将重新编译工具链"
+              rm -rf openwrt-build/staging_dir
+            }
+          else
+            echo "工具链缓存不存在，将重新编译工具链"
+          fi
 
       - name: 恢复依赖包缓存
         uses: actions/cache@v3
