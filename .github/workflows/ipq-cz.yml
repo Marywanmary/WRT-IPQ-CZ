@@ -187,7 +187,10 @@ jobs:
           apt-get install -y build-essential clang flex bison g++ gawk \
             gcc-multilib g++-multilib gettext git libncurses5-dev \
             libssl-dev python3-distutils rsync unzip zlib1g-dev \
-            file wget ccache python3 python3-pip jq ncurses-dev
+            file wget ccache python3 python3-pip jq ncurses-dev \
+            subversion gawk libncursesw5-dev gettext libz-dev \
+            libssl-dev xsltproc zip unzip g++-multilib python3-pyelftools \
+            time wget rsync
           pip3 install pyelftools
           
           # 克隆OpenWrt源码
@@ -224,8 +227,11 @@ jobs:
               # 显示磁盘使用情况
               df -h
               # 显示最后几行日志
-              echo "最后20行编译日志:"
-              tail -n 20 build.log
+              echo "最后50行编译日志:"
+              tail -n 50 build.log
+              # 检查工具链编译错误
+              echo "检查工具链编译错误:"
+              find build_dir -name "*.log" -path "*/tools/*" -exec echo "=== {} ===" \; -exec tail -n 20 {} \;
               exit 1
             }
           done
@@ -255,6 +261,12 @@ jobs:
           fi
           if [ -f "openwrt/prepare-error.log" ]; then
             cp openwrt/prepare-error.log $GITHUB_WORKSPACE/artifacts/
+          fi
+          
+          # 收集所有工具链编译日志
+          if [ -d "openwrt/build_dir" ]; then
+            mkdir -p $GITHUB_WORKSPACE/artifacts/toolchain_logs
+            find openwrt/build_dir -name "*.log" -path "*/tools/*" -exec cp {} $GITHUB_WORKSPACE/artifacts/toolchain_logs/ \;
           fi
 
       - name: 上传编译产物
@@ -346,6 +358,10 @@ jobs:
             if [ -f "$branch_dir/prepare-error.log" ]; then
               cp "$branch_dir/prepare-error.log" "release/logs/${branch_short}-prepare-error.log"
             fi
+            if [ -d "$branch_dir/toolchain_logs" ]; then
+              mkdir -p "release/logs/${branch_short}-toolchain_logs"
+              cp -r "$branch_dir/toolchain_logs/"* "release/logs/${branch_short}-toolchain_logs/"
+            fi
           done
           
           # 打包日志文件
@@ -421,7 +437,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.prepare.outputs.date-tag }}
-          name: OpenWrt固件发布 - ${{ needs.prepare.outputs.date-tag }}
+          name: OpenWrt固件发布 - $github.event.inputs.arch || 'ipq60xx' }}"
           body_path: release/NOTES.md
           files: |
             release/*.bin
