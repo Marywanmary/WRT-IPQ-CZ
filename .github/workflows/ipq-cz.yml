@@ -28,11 +28,10 @@ on:
         type: choice
         options:
         - full          # 完整编译
-        - toolchain     # 从工具链开始
-        - kernel        # 从内核开始
-        - base          # 从基础系统开始
-        - packages      # 从软件包开始
-        - image         # 从固件生成开始
+        - toolchain     # 从工具链编译开始
+        - kernel        # 从内核编译开始
+        - base          # 从基础系统编译开始
+        - packages      # 从软件包编译开始（包含固件生成）
 
 env:
   # 分支信息配置
@@ -67,6 +66,7 @@ jobs:
   build:
     needs: prepare
     runs-on: ${{ github.event.inputs.runner_os || 'ubuntu-22.04' }}
+    timeout-minutes: 360  # 设置超时时间为6小时
     strategy:
       matrix:
         branch: ${{ fromJson(needs.prepare.outputs.matrix) }}
@@ -111,7 +111,7 @@ jobs:
             ${{ runner.os }}-toolchain-${{ matrix.branch.short }}-
 
       - name: 设置内核缓存
-        if: ${{ github.event.inputs.compile_stage == 'base' || github.event.inputs.compile_stage == 'packages' || github.event.inputs.compile_stage == 'image' }}
+        if: ${{ github.event.inputs.compile_stage == 'base' || github.event.inputs.compile_stage == 'packages' }}
         uses: actions/cache@v3
         with:
           path: /tmp/build/build_dir/target-*
@@ -121,7 +121,7 @@ jobs:
             ${{ runner.os }}-kernel-${{ matrix.branch.short }}-
 
       - name: 设置基础系统缓存
-        if: ${{ github.event.inputs.compile_stage == 'packages' || github.event.inputs.compile_stage == 'image' }}
+        if: ${{ github.event.inputs.compile_stage == 'packages' }}
         uses: actions/cache@v3
         with:
           path: /tmp/build/build_dir/host-*
