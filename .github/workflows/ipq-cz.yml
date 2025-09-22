@@ -78,15 +78,14 @@ jobs:
       - name: 清理宿主机磁盘空间
         uses: sbwml/actions@free-disk
         with:
-          # 使用默认配置，清理尽可能多的空间
-          # tool-cache: true
-          # android: true
-          # dotnet: true
-          # haskell: true
-          # large-packages: true
-          # swap-storage: true
-          # docker-images: true
-          # build-cache: true
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+          docker-images: true
+          build-cache: true
 
       - name: 检出代码
         uses: actions/checkout@v4
