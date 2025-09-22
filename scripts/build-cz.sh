@@ -2,6 +2,7 @@
 # OpenWrt 构建脚本
 # 严格错误退出机制
 set -e
+set -o pipefail  # 添加管道错误检测
 
 # 确保脚本有执行权限
 chmod +x "$0"
@@ -49,6 +50,17 @@ fi
 
 if ! python3 -c "import distutils" &> /dev/null; then
     echo "错误: python3-distutils 未安装"
+    exit 1
+fi
+
+# 检查flex和bison
+if ! command -v flex &> /dev/null; then
+    echo "错误: flex 未安装"
+    exit 1
+fi
+
+if ! command -v bison &> /dev/null; then
+    echo "错误: bison 未安装"
     exit 1
 fi
 
@@ -142,6 +154,17 @@ else
     echo "=== 使用缓存的工具链 ==="
 fi
 
+# 设置工具链环境变量
+export PATH="$(pwd)/staging_dir/host/bin:$PATH"
+export STAGING_DIR_HOST="$(pwd)/staging_dir/host"
+export STAGING_DIR_TARGET="$(pwd)/staging_dir/target-$(grep CONFIG_TARGET_ARCH .config | cut -d'"' -f2)_$(grep CONFIG_TARGET_SUFFIX .config | cut -d'"' -f2)"
+
+# 验证工具链是否可用
+if ! command -v aarch64-openwrt-linux-musl-gcc &> /dev/null; then
+    echo "错误: 交叉编译器不可用"
+    exit 1
+fi
+
 # 2. 依赖包下载 (添加重试机制)
 echo "=== 下载依赖包 ==="
 download_success=false
@@ -171,6 +194,27 @@ if [ ! -d "build_dir/target-*/linux-*/" ]; then
     # 创建日志目录
     mkdir -p logs
     
+    # 确保环境变量正确设置
+    export PATH="$(pwd)/staging_dir/host/bin:$PATH"
+    export STAGING_DIR_HOST="$(pwd)/staging_dir/host"
+    
+    # 验证工具链
+    if ! command -v aarch64-openwrt-linux-musl-gcc &> /dev/null; then
+        echo "错误: 内核编译前交叉编译器不可用"
+        exit 1
+    fi
+    
+    # 验证flex和bison
+    if ! command -v flex &> /dev/null; then
+        echo "错误: flex不可用"
+        exit 1
+    fi
+    
+    if ! command -v bison &> /dev/null; then
+        echo "错误: bison不可用"
+        exit 1
+    fi
+    
     # 先尝试单线程编译，以便查看详细错误
     echo "=== 第一次尝试：单线程编译内核 ==="
     if make target/linux/compile -j1 V=s 2>&1 | tee logs/kernel_compile_1.log; then
@@ -183,12 +227,18 @@ if [ ! -d "build_dir/target-*/linux-*/" ]; then
         
         # 分析错误日志
         echo "=== 分析错误日志 ==="
-        if grep -q "undefined reference to" logs/kernel_compile_error.log; then
-            echo "检测到未定义引用错误，可能是链接问题"
+        if grep -q "Could not find compiler" logs/kernel_compile_error.log; then
+            echo "检测到编译器问题，重新安装工具链..."
+            rm -rf staging_dir
+            make toolchain/install -j$(nproc)
+            # 重新设置环境变量
+            export PATH="$(pwd)/staging_dir/host/bin:$PATH"
+            export STAGING_DIR_HOST="$(pwd)/staging_dir/host"
         fi
         
-        if grep -q "No rule to make target" logs/kernel_compile_error.log; then
-            echo "检测到缺少目标规则，可能是依赖问题"
+        if grep -q "flex: not found" logs/kernel_compile_error.log; then
+            echo "检测到flex缺失问题"
+            exit 1
         fi
         
         # 清理内核编译目录
