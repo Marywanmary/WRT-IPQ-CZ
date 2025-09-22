@@ -147,14 +147,14 @@ jobs:
           chmod +x $GITHUB_WORKSPACE/openwrt-build/scripts/*.sh
           
           # 执行分支准备脚本
-          $GITHUB_WORKSPACE/openwrt-build/scripts/script-cz.sh
+          bash $GITHUB_WORKSPACE/openwrt-build/scripts/script-cz.sh
           
           # 编译各配置
-          configs=(${{ env.CONFIGS }})
-          for config in "${configs[@]}"; do
+          echo "${{ env.CONFIGS }}" | tr -d '[]"' | tr ',' '\n' | while read -r config; do
             echo "编译配置: $config"
-            $GITHUB_WORKSPACE/openwrt-build/scripts/build-cz.sh "$config"
+            bash $GITHUB_WORKSPACE/openwrt-build/scripts/build-cz.sh "$config"
           done
+        shell: bash
 
       - name: 收集编译产物
         run: |
