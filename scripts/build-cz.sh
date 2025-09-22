@@ -30,9 +30,9 @@ if [[ ! "$CONFIG_TYPE" =~ ^(Ultra|Max|Pro)$ ]]; then
 fi
 
 # 检查编译阶段是否有效
-if [[ ! "$COMPILE_STAGE" =~ ^(full|toolchain|kernel|base|packages|image)$ ]]; then
+if [[ ! "$COMPILE_STAGE" =~ ^(full|toolchain|kernel|base|packages)$ ]]; then
     echo "错误: 无效的编译阶段 '$COMPILE_STAGE'"
-    echo "有效编译阶段: full, toolchain, kernel, base, packages, image"
+    echo "有效编译阶段: full, toolchain, kernel, base, packages"
     exit 1
 fi
 
@@ -240,7 +240,7 @@ case "$COMPILE_STAGE" in
         ;;
         
     packages)
-        log "从软件包阶段开始编译"
+        log "从软件包阶段开始编译（包含固件生成）"
         
         # 编译软件包
         log "编译软件包"
@@ -249,18 +249,6 @@ case "$COMPILE_STAGE" in
         # 安装软件包
         log "安装软件包"
         make package/install -j$(nproc) >> "$LOG_FILE" 2>&1
-        
-        # 编译目标
-        log "编译目标"
-        make target/install -j$(nproc) >> "$LOG_FILE" 2>&1
-        
-        # 生成固件
-        log "生成固件"
-        make image -j$(nproc) >> "$LOG_FILE" 2>&1
-        ;;
-        
-    image)
-        log "从固件生成阶段开始编译"
         
         # 编译目标
         log "编译目标"
