@@ -179,7 +179,6 @@ safe_git_clone https://github.com/sirpdboy/luci-app-netspeedtest package/netspee
 safe_git_clone https://github.com/sirpdboy/luci-app-partexp package/luci-app-partexp
 safe_git_clone https://github.com/sirpdboy/luci-app-taskplan package/luci-app-taskplan
 safe_git_clone https://github.com/tailscale/tailscale package/tailscale
-# 注意：luci-app-lucky已经在上面克隆过了，这里不再重复克隆
 safe_git_clone https://github.com/nikkinikki-org/OpenWrt-momo package/luci-app-momo
 safe_git_clone https://github.com/nikkinikki-org/OpenWrt-nikki package/nikki
 safe_git_clone https://github.com/vernesong/OpenClash package/OpenClash
