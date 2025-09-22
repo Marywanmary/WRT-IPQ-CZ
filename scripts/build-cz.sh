@@ -71,10 +71,10 @@ log "合并配置文件"
 # 确保configs目录存在
 mkdir -p configs
 
-# 检查配置文件是否存在
-CHIP_CONFIG="$WORKSPACE/configs/${ARCH}_base.config"
-BRANCH_CONFIG="$WORKSPACE/configs/${BRANCH_SHORT}_base.config"
-PACKAGE_CONFIG="$WORKSPACE/configs/${CONFIG_TYPE}.config"
+# 检查配置文件是否存在 - 修改路径为openwrt-build/configs
+CHIP_CONFIG="$WORKSPACE/openwrt-build/configs/${ARCH}_base.config"
+BRANCH_CONFIG="$WORKSPACE/openwrt-build/configs/${BRANCH_SHORT}_base.config"
+PACKAGE_CONFIG="$WORKSPACE/openwrt-build/configs/${CONFIG_TYPE}.config"
 
 if [ ! -f "$CHIP_CONFIG" ]; then
     error_log "芯片配置文件不存在: $CHIP_CONFIG"
