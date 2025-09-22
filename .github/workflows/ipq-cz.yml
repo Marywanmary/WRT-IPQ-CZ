@@ -78,14 +78,9 @@ jobs:
       - name: 清理宿主机磁盘空间
         uses: sbwml/actions@free-disk
         with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          swap-storage: true
-          docker-images: true
-          build-cache: true
+          root-reserve-gb: 2  # 保留2GB根目录空间
+          swap-size-gb: 4     # 设置4GB交换空间
+          build-mount-path: /tmp/build  # 构建目录路径
 
       - name: 检出代码
         uses: actions/checkout@v4
