@@ -109,17 +109,17 @@ jobs:
           export WORKSPACE="$GITHUB_WORKSPACE"
           
           # 执行编译脚本
-          chmod +x $GITHUB_WORKSPACE/openwrt-build/scripts/scripts.sh
-          chmod +x $GITHUB_WORKSPACE/openwrt-build/scripts/build.sh
+          chmod +x $GITHUB_WORKSPACE/openwrt-build/scripts/scripts-cz.sh
+          chmod +x $GITHUB_WORKSPACE/openwrt-build/scripts/build-cz.sh
           
           # 执行分支准备脚本
-          $GITHUB_WORKSPACE/openwrt-build/scripts/scripts.sh
+          $GITHUB_WORKSPACE/openwrt-build/scripts/scripts-cz.sh
           
           # 编译各配置
           configs=(${{ env.CONFIGS }})
           for config in "${configs[@]}"; do
             echo "编译配置: $config"
-            $GITHUB_WORKSPACE/openwrt-build/scripts/build.sh "$config"
+            $GITHUB_WORKSPACE/openwrt-build/scripts/build-cz.sh "$config"
           done
 
       - name: 收集编译产物
