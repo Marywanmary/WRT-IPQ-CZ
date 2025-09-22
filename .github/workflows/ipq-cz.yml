@@ -13,8 +13,14 @@ on:
         type: choice
         options:
         - ipq60xx
-        - ipq80xx
-        - mtk
+      runner_os:
+        description: '运行环境'
+        required: true
+        default: 'ubuntu-22.04'
+        type: choice
+        options:
+        - ubuntu-22.04
+        - ubuntu-24.04
 
 env:
   # 分支信息配置
@@ -48,19 +54,24 @@ jobs:
   # 编译阶段：并行编译各分支和配置
   build:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.runner_os || 'ubuntu-22.04' }}
     strategy:
       matrix:
         branch: ${{ fromJson(needs.prepare.outputs.matrix) }}
       max-parallel: 3  # 分支级并行
     container:
-      image: ubuntu:22.04
+      image: ${{ github.event.inputs.runner_os == 'ubuntu-24.04' && 'ubuntu:24.04' || 'ubuntu:22.04' }}
     steps:
-      - name: 初始磁盘清理
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo docker system prune -af
-          df -h
+      - name: 清理磁盘空间
+        uses: jlumbroso/free-disk-space@main
+        with:
+          # 可选配置，保留的工具
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
 
       - name: 安装必要软件
         run: |
