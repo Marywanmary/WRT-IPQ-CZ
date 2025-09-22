@@ -107,11 +107,7 @@ function git_sparse_clone() {
         if [ -d "$temp_dir/$repodir/$dir" ]; then
             # 确保目标目录存在
             local target_dir="package/$dir"
-            if [[ "$target_dir" == feeds* ]]; then
-                mkdir -p "$(dirname "$target_dir")"
-            else
-                mkdir -p "$(dirname "$target_dir")"
-            fi
+            mkdir -p "$(dirname "$target_dir")"
             
             # 移动文件
             mv -f "$temp_dir/$repodir/$dir" "$target_dir"
@@ -129,20 +125,32 @@ git clone --depth=1 https://github.com/sbwml/packages_lang_golang feeds/packages
 git clone --depth=1 https://github.com/sbwml/luci-app-openlist2 package/openlist
 git_sparse_clone ariang https://github.com/laipeng668/packages net/ariang
 
-# 先创建目标目录，再移动frp包
+# 克隆frp包并直接移动到feeds/packages/net
 mkdir -p feeds/packages/net
 git_sparse_clone frp https://github.com/laipeng668/packages net/frp
-mv -f package/frp feeds/packages/net/frp
+# 将package/net/frp移动到feeds/packages/net
+if [ -d "package/net/frp" ]; then
+    mv -f package/net/frp feeds/packages/net/
+    log "已移动frp到feeds/packages/net/"
+fi
 
 git_sparse_clone frp https://github.com/laipeng668/luci applications/luci-app-frpc applications/luci-app-frps
-mv -f package/luci-app-frpc feeds/luci/applications/luci-app-frpc
-mv -f package/luci-app-frps feeds/luci/applications/luci-app-frps
+# 将luci-app-frpc和luci-app-frps移动到feeds/luci/applications
+if [ -d "package/applications/luci-app-frpc" ]; then
+    mv -f package/applications/luci-app-frpc feeds/luci/applications/
+    log "已移动luci-app-frpc到feeds/luci/applications/"
+fi
+if [ -d "package/applications/luci-app-frps" ]; then
+    mv -f package/applications/luci-app-frps feeds/luci/applications/
+    log "已移动luci-app-frps到feeds/luci/applications/"
+fi
+
 git_sparse_clone main https://github.com/VIKINGYFY/packages luci-app-wolplus
 git clone --depth=1 https://github.com/gdy666/luci-app-lucky package/luci-app-lucky
 git clone --depth=1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
 git clone --depth=1 https://github.com/lwb1978/openwrt-gecoosac package/openwrt-gecoosac
 git clone --depth=1 https://github.com/NONGFAH/luci-app-athena-led package/luci-app-athena-led
-chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena-led
+chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena_led
 
 # Mary定制包
 log "克隆Mary定制软件包"
