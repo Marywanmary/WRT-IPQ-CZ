@@ -112,9 +112,19 @@ for CFG in "${CONFIGS[@]}"; do
     make dirclean > /dev/null 2>&1 || true
     echo "构建空间清理完成"
 
-    # 生成默认配置
+    # 生成默认配置 - 修复Broken pipe问题
     echo "正在生成默认配置..."
-    yes "" | make defconfig > /dev/null 2>&1 || echo "警告: 默认配置生成失败"
+    # 使用timeout命令避免yes命令无限运行
+    if ! timeout 30 bash -c 'yes "" | make defconfig' > /dev/null 2>&1; then
+        echo "警告: 默认配置生成失败，尝试使用旧配置"
+        if [ -f "${TMP_DIR}/${REPO_SHORT}-${CHIP}-${CFG}.config" ]; then
+            cp "${TMP_DIR}/${REPO_SHORT}-${CHIP}-${CFG}.config" .config
+            echo "已恢复配置"
+        else
+            echo "错误: 无法恢复配置"
+            handle_error
+        fi
+    fi
     echo "默认配置生成完成"
 
     # 编译并重定向日志
