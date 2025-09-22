@@ -184,7 +184,9 @@ jobs:
       if: always()
       run: |
         echo "正在清理临时文件..."
-        rm -rf /tmp/*
+        # 忽略系统保护的临时文件，只清理我们可以删除的文件
+        find /tmp -maxdepth 1 -type f -delete 2>/dev/null || true
+        find /tmp -maxdepth 1 -type d -name "tmp*" -exec rm -rf {} \; 2>/dev/null || true
         docker system prune -f
         echo "临时文件清理完成"
 
