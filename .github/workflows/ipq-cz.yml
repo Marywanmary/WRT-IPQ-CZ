@@ -1,715 +1,307 @@
-name: IPQ-cz
-
-# 工作流说明：
-# 1. base_version 参数用于控制基础系统缓存，初始值为"初始版本"
-# 2. 当您修改了以下配置文件时，需要将此值改为"更新版本"：
-#    - configs/ipq60xx_base.config（芯片基础配置）
-#    - configs/op_base.config（openwrt分支基础配置）
-#    - configs/imm_base.config（immortalwrt分支基础配置）
-#    - configs/lib_base.config（libwrt分支基础配置）
-# 3. 修改后系统会使用新的配置重新编译基础系统，避免使用旧缓存导致配置不生效
+name: OpenWrt固件编译
 
 on:
+  # 北京时间周五0点（UTC+8），转换为UTC时间是周四16点
+  schedule:
+    - cron: '0 16 * * 4'
   workflow_dispatch:
     inputs:
-      chip_arch:
+      arch:
         description: '芯片架构'
         required: true
         default: 'ipq60xx'
         type: choice
         options:
         - ipq60xx
-        # - ipq80xx  # 暂时注释掉
-        # - mtk      # 暂时注释掉
-      ubuntu_version:
-        description: 'Ubuntu版本'
-        required: true
-        default: '22.04'
-        type: choice
-        options:
-        - 22.04
-        # - 24.04    # 暂时注释掉
-      base_version:
-        description: '基础系统版本（初始为"初始版本"，修改基础配置后改为"更新版本"）'
-        required: true
-        default: '初始版本'
-        type: choice
-        options:
-        - 初始版本
-        - 更新版本
-
-  schedule:
-    # 北京时间周五0点 = UTC时间周四16:00
-    - cron: '0 16 * * 4'
+        - ipq80xx
+        - mtk
 
 env:
-  CHIP_ARCH: ${{ github.event.inputs.chip_arch || 'ipq60xx' }}
-  UBUNTU_VERSION: ${{ github.event.inputs.ubuntu_version || '22.04' }}
-  BASE_VERSION: ${{ github.event.inputs.base_version || '初始版本' }}
-  DOCKER_IMAGE: "openwrt-builder:${{ github.event.inputs.chip_arch || 'ipq60xx' }}-${{ github.event.inputs.ubuntu_version || '22.04' }}"
+  # 分支信息配置
+  BRANCHES: '[
+    {"name": "immortalwrt", "url": "https://github.com/laipeng668/immortalwrt.git", "branch": "master", "short": "immwrt"},
+    {"name": "openwrt", "url": "https://github.com/laipeng668/openwrt.git", "branch": "master", "short": "openwrt"},
+    {"name": "libwrt", "url": "https://github.com/laipeng668/openwrt-6.x.git", "branch": "k6.12-nss", "short": "libwrt"}
+  ]'
+  # 配置列表，按照优先级排序（Ultra > Max > Pro）
+  CONFIGS: '["Ultra", "Max", "Pro"]'
+  # Docker镜像
+  DOCKER_IMAGE: ubuntu:22.04
 
 jobs:
-  # 第一阶段：编译所有分支的Ultra配置
-  build-ultra:
+  # 准备阶段：设置环境和缓存
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      date-tag: ${{ steps.set-date.outputs.date-tag }}
+    steps:
+      - name: 设置日期标签
+        id: set-date
+        run: echo "date-tag=$(date +'%Y-%m-%d')-${{ github.event.inputs.arch || 'ipq60xx' }}" >> $GITHUB_OUTPUT
+      
+      - name: 设置编译矩阵
+        id: set-matrix
+        run: |
+          matrix=$(echo '${{ env.BRANCHES }}' | jq -c '.[] | {branch: .name, url: .url, branch_name: .branch, short: .short}')
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+
+  # 编译阶段：并行编译各分支和配置
+  build:
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        branch: [openwrt, immortalwrt, libwrt]
-        config: [Ultra]
-      max-parallel: 3 # 3个分支并行
-    timeout-minutes: 360 # 6小时超时
-
+        branch: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      max-parallel: 3  # 分支级并行
+    container:
+      image: ${{ env.DOCKER_IMAGE }}
     steps:
-      - name: 释放磁盘空间
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          swap-storage: true
-
-      - name: 超级磁盘清理
+      - name: 初始磁盘清理
         run: |
-          # 系统清理
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
-          sudo docker system prune -af --volumes
-          sudo apt-get clean
-          
-          # GitHub Actions缓存清理
-          sudo rm -rf $HOME/.cache/pip $HOME/.cargo/registry
-          
-          # 创建交换空间
-          sudo fallocate -l 10G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          
-          # 显示磁盘信息
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo docker system prune -af
           df -h
+
+      - name: 安装必要软件
+        run: |
+          apt-get update
+          apt-get install -y build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git libncurses5-dev \
+            libssl-dev python3-distutils rsync unzip zlib1g-dev \
+            file wget sudo ccache python3 python3-pip jq
+          pip3 install pyelftools
 
       - name: 检出代码
         uses: actions/checkout@v4
         with:
-          path: openwrt-build
+          path: 'openwrt-build'
 
-      - name: 设置Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: 构建并缓存Docker镜像
-        uses: docker/build-push-action@v5
-        with:
-          context: ./openwrt-build
-          file: ./openwrt-build/Dockerfile
-          push: false
-          load: true
-          tags: ${{ env.DOCKER_IMAGE }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            CHIP_ARCH=${{ env.CHIP_ARCH }}
-            UBUNTU_VERSION=${{ env.UBUNTU_VERSION }}
-
-      - name: 恢复工具链缓存
+      - name: 设置缓存
         uses: actions/cache@v3
         with:
-          path: |
-            openwrt-build/staging_dir/
-            openwrt-build/build_dir/toolchain
-          key: toolchain-${{ runner.os }}-${{ env.CHIP_ARCH }}-${{ env.UBUNTU_VERSION }}
+          path: /tmp/ccache
+          key: ${{ runner.os }}-ccache-${{ matrix.branch.short }}-${{ github.sha }}
           restore-keys: |
-            toolchain-${{ runner.os }}-${{ env.CHIP_ARCH }}-
-            toolchain-${{ runner.os }}-
+            ${{ runner.os }}-ccache-${{ matrix.branch.short }}-
+            ${{ runner.os }}-ccache-
 
-      - name: 验证工具链缓存
+      - name: 设置编译环境
         run: |
-          if [ -d "openwrt-build/staging_dir/host/bin" ]; then
-            echo "工具链缓存存在"
-            ls -la openwrt-build/staging_dir/host/bin/ | grep aarch64-openwrt-linux-musl-gcc || {
-              echo "警告: 交叉编译器不在缓存中，将重新编译工具链"
-              rm -rf openwrt-build/staging_dir
-            }
-          else
-            echo "工具链缓存不存在，将重新编译工具链"
-          fi
-
-      - name: 恢复依赖包缓存
-        uses: actions/cache@v3
-        with:
-          path: |
-            openwrt-build/dl/
-            openwrt-build/feeds/
-          key: deps-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-${{ hashFiles('openwrt-build/feeds.conf.default', 'openwrt-build/feeds.conf') }}
-          restore-keys: |
-            deps-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-
-            deps-${{ matrix.branch }}-
-
-      - name: 恢复内核缓存
-        uses: actions/cache@v3
-        with:
-          path: openwrt-build/build_dir/target-*/linux-*/
-          key: kernel-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-${{ hashFiles('openwrt-build/target/linux/generic/config-*', 'openwrt-build/target/linux/${{ env.CHIP_ARCH }}/config-*') }}
-          restore-keys: |
-            kernel-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-
-            kernel-${{ matrix.branch }}-
-
-      - name: 恢复基础系统缓存
-        uses: actions/cache@v3
-        with:
-          path: |
-            openwrt-build/build_dir/target-*/root-*/
-            openwrt-build/staging_dir/target-*/
-          key: base-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-${{ env.BASE_VERSION }}
-          restore-keys: |
-            base-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-
-            base-${{ matrix.branch }}-
-
-      - name: 恢复软件包缓存
-        uses: actions/cache@v3
-        with:
-          path: openwrt-build/bin/packages/
-          key: packages-${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}
-          restore-keys: |
-            packages-${{ matrix.branch }}-${{ matrix.config }}-
-            packages-${{ matrix.branch }}-
-
-      - name: 在Docker中编译
-        run: |
-          # 确保宿主机脚本有执行权限
-          chmod +x openwrt-build/scripts/build-cz.sh
-          chmod +x openwrt-build/scripts/script-cz.sh
+          mkdir -p /tmp/build
+          cd /tmp/build
+          git clone --depth 1 --branch ${{ matrix.branch.branch_name }} ${{ matrix.branch.url }} openwrt
+          cd openwrt
+          cp -r $GITHUB_WORKSPACE/openwrt-build/* .
           
-          docker run --rm \
-            -v ${{ github.workspace }}/openwrt-build:/openwrt \
-            -e CHIP_ARCH=${{ env.CHIP_ARCH }} \
-            -e CONFIG_PROFILE=${{ matrix.config }} \
-            -e BRANCH_NAME=${{ matrix.branch }} \
-            -e BASE_VERSION=${{ env.BASE_VERSION }} \
-            ${{ env.DOCKER_IMAGE }} \
-            /bin/bash -c "
-              cd /openwrt
-              # 确保容器内脚本有执行权限
-              chmod +x scripts/build-cz.sh
-              chmod +x scripts/script-cz.sh
-              scripts/build-cz.sh 2>&1 | tee build.log
-            "
+          # 设置ccache
+          export CCACHE_DIR=/tmp/ccache
+          ccache -M 20G
+          ccache -s
 
-      - name: 检查编译状态
-        if: always()
+      - name: 执行编译脚本
+        working-directory: /tmp/build/openwrt
         run: |
-          if [ -f openwrt-build/build.log ]; then
-            echo "编译日志:"
-            tail -n 100 openwrt-build/build.log
-            if grep -q "ERROR\|Error\|FATAL" openwrt-build/build.log; then
-              echo "编译失败，发现错误"
-              
-              # 创建错误报告
-              mkdir -p error-report
-              echo "# 编译错误报告" > error-report/ERROR_REPORT.md
-              echo "## 基本信息" >> error-report/ERROR_REPORT.md
-              echo "- **芯片架构**: ${{ env.CHIP_ARCH }}" >> error-report/ERROR_REPORT.md
-              echo "- **配置文件**: ${{ matrix.config }}" >> error-report/ERROR_REPORT.md
-              echo "- **分支名称**: ${{ matrix.branch }}" >> error-report/ERROR_REPORT.md
-              echo "- **基础系统版本**: ${{ env.BASE_VERSION }}" >> error-report/ERROR_REPORT.md
-              echo "" >> error-report/ERROR_REPORT.md
-              echo "## 错误日志" >> error-report/ERROR_REPORT.md
-              echo "\`\`\`" >> error-report/ERROR_REPORT.md
-              grep -E "ERROR|Error|FATAL" openwrt-build/build.log >> error-report/ERROR_REPORT.md
-              echo "\`\`\`" >> error-report/ERROR_REPORT.md
-              
-              # 检查是否有内核编译错误
-              if [ -d openwrt-build/logs ]; then
-                echo "" >> error-report/ERROR_REPORT.md
-                echo "## 内核编译错误" >> error-report/ERROR_REPORT.md
-                for log in openwrt-build/logs/kernel_compile_*.log; do
-                  if [ -f "$log" ]; then
-                    echo "### $(basename "$log")" >> error-report/ERROR_REPORT.md
-                    echo "\`\`\`" >> error-report/ERROR_REPORT.md
-                    tail -n 50 "$log" >> error-report/ERROR_REPORT.md
-                    echo "\`\`\`" >> error-report/ERROR_REPORT.md
-                    echo "" >> error-report/ERROR_REPORT.md
-                  fi
-                done
-              fi
-              
-              # 上传错误报告
-              name: "error-report-${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}"
-              path: error-report/
-              retention-days: 30
-              
-              exit 1
-            fi
-          fi
-
-      - name: 保存缓存
-        if: always()
-        uses: actions/cache/save@v3
-        with:
-          path: |
-            openwrt-build/staging_dir/
-            openwrt-build/build_dir/toolchain
-            openwrt-build/dl/
-            openwrt-build/feeds/
-            openwrt-build/build_dir/target-*/linux-*/
-            openwrt-build/build_dir/target-*/root-*/
-            openwrt-build/staging_dir/target-*/
-            openwrt-build/bin/packages/
-          key: ${{ runner.os }}-${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}-${{ github.run_number }}
-
-      - name: 处理编译产物
-        run: |
-          cd openwrt-build
+          # 设置环境变量
+          export ARCH="${{ github.event.inputs.arch || 'ipq60xx' }}"
+          export BRANCH="${{ matrix.branch.name }}"
+          export BRANCH_SHORT="${{ matrix.branch.short }}"
+          export WORKSPACE="$GITHUB_WORKSPACE"
           
-          # 创建临时目录
-          mkdir -p artifacts/firmware artifacts/config artifacts/logs artifacts/packages
+          # 执行编译脚本
+          chmod +x $GITHUB_WORKSPACE/openwrt-build/scripts/scripts.sh
+          chmod +x $GITHUB_WORKSPACE/openwrt-build/scripts/build.sh
           
-          # 处理固件文件
-          for firmware in bin/targets/*/*/*.bin; do
-            if [ -f "$firmware" ]; then
-              # 提取设备名称
-              device_name=$(echo "$firmware" | grep -oP '(?<=qualcommax-ipq60xx-)[^/]+(?=-)')
-              # 提取固件类型 (factory/sysupgrade)
-              firmware_type=$(echo "$firmware" | grep -oP '(?<=-)[^/]+(?=\.bin)')
-              
-              # 根据分支获取缩写
-              case "${{ matrix.branch }}" in
-                "openwrt") branch_short="openwrt" ;;
-                "immortalwrt") branch_short="immwrt" ;;
-                "libwrt") branch_short="libwrt" ;;
-              esac
-              
-              # 重命名固件
-              new_name="${branch_short}-${{ env.CHIP_ARCH }}-${device_name}-${firmware_type}-${{ matrix.config }}.bin"
-              cp "$firmware" "artifacts/firmware/$new_name"
-            fi
+          # 执行分支准备脚本
+          $GITHUB_WORKSPACE/openwrt-build/scripts/scripts.sh
+          
+          # 编译各配置
+          configs=(${{ env.CONFIGS }})
+          for config in "${configs[@]}"; do
+            echo "编译配置: $config"
+            $GITHUB_WORKSPACE/openwrt-build/scripts/build.sh "$config"
           done
+
+      - name: 收集编译产物
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/artifacts
+          cd /tmp/build
           
-          # 处理配置文件
-          for config_file in .config .config.buildinfo; do
-            if [ -f "$config_file" ]; then
-              # 提取设备名称
-              device_name=$(grep "CONFIG_TARGET_DEVICE_.*=y" .config | head -1 | sed 's/.*DEVICE_\(.*\)=y/\1/' | tr '[:upper:]' '[:lower:]')
-              
-              # 根据分支获取缩写
-              case "${{ matrix.branch }}" in
-                "openwrt") branch_short="openwrt" ;;
-                "immortalwrt") branch_short="immwrt" ;;
-                "libwrt") branch_short="libwrt" ;;
-              esac
-              
-              # 重命名配置文件
-              new_name="${branch_short}-${{ env.CHIP_ARCH }}-${device_name}-${{ matrix.config }}.${config_file#.config.}"
-              cp "$config_file" "artifacts/config/$new_name"
-            fi
-          done
-          
-          # 处理manifest文件
-          if [ -f "bin/targets/*/manifest" ]; then
-            # 提取设备名称
-            device_name=$(grep "CONFIG_TARGET_DEVICE_.*=y" .config | head -1 | sed 's/.*DEVICE_\(.*\)=y/\1/' | tr '[:upper:]' '[:lower:]')
-            
-            # 根据分支获取缩写
-            case "${{ matrix.branch }}" in
-              "openwrt") branch_short="openwrt" ;;
-              "immortalwrt") branch_short="immwrt" ;;
-              "libwrt") branch_short="libwrt" ;;
-            esac
-            
-            # 重命名manifest文件
-            new_name="${branch_short}-${{ env.CHIP_ARCH }}-${device_name}-${{ matrix.config }}.manifest"
-            cp "bin/targets/*/manifest" "artifacts/config/$new_name"
+          # 收集固件
+          if [ -d "openwrt/bin/targets" ]; then
+            cp -r openwrt/bin/targets $GITHUB_WORKSPACE/artifacts/
           fi
           
-          # 处理日志文件
-          cp build.log artifacts/logs/full.log
-          grep -E "ERROR|Error|FATAL|WARNING|Warning" build.log > artifacts/logs/errors.log || true
-          
-          # 处理软件包
-          if [ -d "bin/packages" ]; then
-            cp -r bin/packages/* artifacts/packages/ 2>/dev/null || true
+          # 收集配置文件
+          if [ -d "openwrt/.config" ]; then
+            cp openwrt/.config $GITHUB_WORKSPACE/artifacts/
           fi
           
-          # 打包产物
-          cd artifacts
-          tar -czf "${{ env.CHIP_ARCH }}-config.tar.gz" config/
-          tar -czf "${{ env.CHIP_ARCH }}-log.tar.gz" logs/
-          tar -czf "${{ env.CHIP_ARCH }}-app.tar.gz" packages/
-          cd ..
+          # 收集日志
+          if [ -f "openwrt/build.log" ]; then
+            cp openwrt/build.log $GITHUB_WORKSPACE/artifacts/
+          fi
 
       - name: 上传编译产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}
-          path: openwrt-build/artifacts/
+          name: build-${{ matrix.branch.short }}-${{ github.event.inputs.arch || 'ipq60xx' }}
+          path: artifacts/
           retention-days: 7
 
-  # 第二阶段：编译所有分支的Max和Pro配置
-  build-others:
-    needs: build-ultra
+  # 整理阶段：合并所有编译产物
+  package:
+    needs: [prepare, build]
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        branch: [openwrt, immortalwrt, libwrt]
-        config: [Max, Pro]
-      max-parallel: 3 # 3个分支并行
-    timeout-minutes: 360 # 6小时超时
-
     steps:
-      - name: 释放磁盘空间
-        uses: jlumbroso/free-disk-space@main
+      - name: 下载所有编译产物
+        uses: actions/download-artifact@v3
         with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          swap-storage: true
-
-      - name: 超级磁盘清理
-        run: |
-          # 系统清理
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
-          sudo docker system prune -af --volumes
-          sudo apt-get clean
-          
-          # GitHub Actions缓存清理
-          sudo rm -rf $HOME/.cache/pip $HOME/.cargo/registry
-          
-          # 创建交换空间
-          sudo fallocate -l 10G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          
-          # 显示磁盘信息
-          df -h
-
-      - name: 检出代码
-        uses: actions/checkout@v4
-        with:
-          path: openwrt-build
-
-      - name: 设置Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: 构建并缓存Docker镜像
-        uses: docker/build-push-action@v5
-        with:
-          context: ./openwrt-build
-          file: ./openwrt-build/Dockerfile
-          push: false
-          load: true
-          tags: ${{ env.DOCKER_IMAGE }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            CHIP_ARCH=${{ env.CHIP_ARCH }}
-            UBUNTU_VERSION=${{ env.UBUNTU_VERSION }}
-
-      - name: 恢复工具链缓存
-        uses: actions/cache@v3
-        with:
-          path: |
-            openwrt-build/staging_dir/
-            openwrt-build/build_dir/toolchain
-          key: toolchain-${{ runner.os }}-${{ env.CHIP_ARCH }}-${{ env.UBUNTU_VERSION }}
-          restore-keys: |
-            toolchain-${{ runner.os }}-${{ env.CHIP_ARCH }}-
-            tool-chain-${{ runner.os }}-
-
-      - name: 验证工具链缓存
-        run: |
-          if [ -d "openwrt-build/staging_dir/host/bin" ]; then
-            echo "工具链缓存存在"
-            ls -la openwrt-build/staging_dir/host/bin/ | grep aarch64-openwrt-linux-musl-gcc || {
-              echo "警告: 交叉编译器不在缓存中，将重新编译工具链"
-              rm -rf openwrt-build/staging_dir
-            }
-          else
-            echo "工具链缓存不存在，将重新编译工具链"
-          fi
-
-      - name: 恢复依赖包缓存
-        uses: actions/cache@v3
-        with:
-          path: |
-            openwrt-build/dl/
-            openwrt-build/feeds/
-          key: deps-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-${{ hashFiles('openwrt-build/feeds.conf.default', 'openwrt-build/feeds.conf') }}
-          restore-keys: |
-            deps-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-
-            deps-${{ matrix.branch }}-
-
-      - name: 恢复内核缓存
-        uses: actions/cache@v3
-        with:
-          path: openwrt-build/build_dir/target-*/linux-*/
-          key: kernel-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-${{ hashFiles('openwrt-build/target/linux/generic/config-*', 'openwrt-build/target/linux/${{ env.CHIP_ARCH }}/config-*') }}
-          restore-keys: |
-            kernel-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-
-            kernel-${{ matrix.branch }}-
-
-      - name: 恢复基础系统缓存
-        uses: actions/cache@v3
-        with:
-          path: |
-            openwrt-build/build_dir/target-*/root-*/
-            openwrt-build/staging_dir/target-*/
-          key: base-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-${{ env.BASE_VERSION }}
-          restore-keys: |
-            base-${{ matrix.branch }}-${{ env.CHIP_ARCH }}-
-            base-${{ matrix.branch }}-
-
-      - name: 恢复软件包缓存
-        uses: actions/cache@v3
-        with:
-          path: openwrt-build/bin/packages/
-          key: packages-${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}
-          restore-keys: |
-            packages-${{ matrix.branch }}-${{ matrix.config }}-
-            packages-${{ matrix.branch }}-
-
-      - name: 在Docker中编译
-        run: |
-          # 确保宿主机脚本有执行权限
-          chmod +x openwrt-build/scripts/build-cz.sh
-          chmod +x openwrt-build/scripts/script-cz.sh
-          
-          docker run --rm \
-            -v ${{ github.workspace }}/openwrt-build:/openwrt \
-            -e CHIP_ARCH=${{ env.CHIP_ARCH }} \
-            -e CONFIG_PROFILE=${{ matrix.config }} \
-            -e BRANCH_NAME=${{ matrix.branch }} \
-            -e BASE_VERSION=${{ env.BASE_VERSION }} \
-            ${{ env.DOCKER_IMAGE }} \
-            /bin/bash -c "
-              cd /openwrt
-              # 确保容器内脚本有执行权限
-              chmod +x scripts/build-cz.sh
-              chmod +x scripts/script-cz.sh
-              scripts/build-cz.sh 2>&1 | tee build.log
-            "
-
-      - name: 检查编译状态
-        if: always()
-        run: |
-          if [ -f openwrt-build/build.log ]; then
-            echo "编译日志:"
-            tail -n 100 openwrt-build/build.log
-            if grep -q "ERROR\|Error\|FATAL" openwrt-build/build.log; then
-              echo "编译失败，发现错误"
-              
-              # 创建错误报告
-              mkdir -p error-report
-              echo "# 编译错误报告" > error-report/ERROR_REPORT.md
-              echo "## 基本信息" >> error-report/ERROR_REPORT.md
-              echo "- **芯片架构**: ${{ env.CHIP_ARCH }}" >> error-report/ERROR_REPORT.md
-              echo "- **配置文件**: ${{ matrix.config }}" >> error-report/ERROR_REPORT.md
-              echo "- **分支名称**: ${{ matrix.branch }}" >> error-report/ERROR_REPORT.md
-              echo "- **基础系统版本**: ${{ env.BASE_VERSION }}" >> error-report/ERROR_REPORT.md
-              echo "" >> error-report/ERROR_REPORT.md
-              echo "## 错误日志" >> error-report/ERROR_REPORT.md
-              echo "\`\`\`" >> error-report/ERROR_REPORT.md
-              grep -E "ERROR|Error|FATAL" openwrt-build/build.log >> error-report/ERROR_REPORT.md
-              echo "\`\`\`" >> error-report/ERROR_REPORT.md
-              
-              # 检查是否有内核编译错误
-              if [ -d openwrt-build/logs ]; then
-                echo "" >> error-report/ERROR_REPORT.md
-                echo "## 内核编译错误" >> error-report/ERROR_REPORT.md
-                for log in openwrt-build/logs/kernel_compile_*.log; do
-                  if [ -f "$log" ]; then
-                    echo "### $(basename "$log")" >> error-report/ERROR_REPORT.md
-                    echo "\`\`\`" >> error-report/ERROR_REPORT.md
-                    tail -n 50 "$log" >> error-report/ERROR_REPORT.md
-                    echo "\`\`\`" >> error-report/ERROR_REPORT.md
-                    echo "" >> error-report/ERROR_REPORT.md
-                  fi
-                done
-              fi
-              
-              # 上传错误报告
-              name: "error-report-${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}"
-              path: error-report/
-              retention-days: 30
-              
-              exit 1
-            fi
-          fi
-
-      - name: 保存缓存
-        if: always()
-        uses: actions/cache/save@v3
-        with:
-          path: |
-            openwrt-build/staging_dir/
-            openwrt-build/build_dir/toolchain
-            openwrt-build/dl/
-            openwrt-build/feeds/
-            openwrt-build/build_dir/target-*/linux-*/
-            openwrt-build/build_dir/target-*/root-*/
-            openwrt-build/staging_dir/target-*/
-            openwrt-build/bin/packages/
-          key: ${{ runner.os }}-${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}-${{ github.run_number }}
-
-      - name: 处理编译产物
-        run: |
-          cd openwrt-build
-          
-          # 创建临时目录
-          mkdir -p artifacts/firmware artifacts/config artifacts/logs artifacts/packages
-          
-          # 处理固件文件
-          for firmware in bin/targets/*/*/*.bin; do
-            if [ -f "$firmware" ]; then
-              # 提取设备名称
-              device_name=$(echo "$firmware" | grep -oP '(?<=qualcommax-ipq60xx-)[^/]+(?=-)')
-              # 提取固件类型 (factory/sysupgrade)
-              firmware_type=$(echo "$firmware" | grep -oP '(?<=-)[^/]+(?=\.bin)')
-              
-              # 根据分支获取缩写
-              case "${{ matrix.branch }}" in
-                "openwrt") branch_short="openwrt" ;;
-                "immortalwrt") branch_short="immwrt" ;;
-                "libwrt") branch_short="libwrt" ;;
-              esac
-              
-              # 重命名固件
-              new_name="${branch_short}-${{ env.CHIP_ARCH }}-${device_name}-${firmware_type}-${{ matrix.config }}.bin"
-              cp "$firmware" "artifacts/firmware/$new_name"
-            fi
-          done
-          
-          # 处理配置文件
-          for config_file in .config .config.buildinfo; do
-            if [ -f "$config_file" ]; then
-              # 提取设备名称
-              device_name=$(grep "CONFIG_TARGET_DEVICE_.*=y" .config | head -1 | sed 's/.*DEVICE_\(.*\)=y/\1/' | tr '[:upper:]' '[:lower:]')
-              
-              # 根据分支获取缩写
-              case "${{ matrix.branch }}" in
-                "openwrt") branch_short="openwrt" ;;
-                "immortalwrt") branch_short="immwrt" ;;
-                "libwrt") branch_short="libwrt" ;;
-              esac
-              
-              # 重命名配置文件
-              new_name="${branch_short}-${{ env.CHIP_ARCH }}-${device_name}-${{ matrix.config }}.${config_file#.config.}"
-              cp "$config_file" "artifacts/config/$new_name"
-            fi
-          done
-          
-          # 处理manifest文件
-          if [ -f "bin/targets/*/manifest" ]; then
-            # 提取设备名称
-            device_name=$(grep "CONFIG_TARGET_DEVICE_.*=y" .config | head -1 | sed 's/.*DEVICE_\(.*\)=y/\1/' | tr '[:upper:]' '[:lower:]')
-            
-            # 根据分支获取缩写
-            case "${{ matrix.branch }}" in
-              "openwrt") branch_short="openwrt" ;;
-              "immortalwrt") branch_short="immwrt" ;;
-              "libwrt") branch_short="libwrt" ;;
-            esac
-            
-            # 重命名manifest文件
-            new_name="${branch_short}-${{ env.CHIP_ARCH }}-${device_name}-${{ matrix.config }}.manifest"
-            cp "bin/targets/*/manifest" "artifacts/config/$new_name"
-          fi
-          
-          # 处理日志文件
-          cp build.log artifacts/logs/full.log
-          grep -E "ERROR|Error|FATAL|WARNING|Warning" build.log > artifacts/logs/errors.log || true
-          
-          # 处理软件包
-          if [ -d "bin/packages" ]; then
-            cp -r bin/packages/* artifacts/packages/ 2>/dev/null || true
-          fi
-          
-          # 打包产物
-          cd artifacts
-          tar -czf "${{ env.CHIP_ARCH }}-config.tar.gz" config/
-          tar -czf "${{ env.CHIP_ARCH }}-log.tar.gz" logs/
-          tar -czf "${{ env.CHIP_ARCH }}-app.tar.gz" packages/
-          cd ..
-
-      - name: 上传编译产物
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}
-          path: openwrt-build/artifacts/
-          retention-days: 7
-
-  # 发布任务
-  release:
-    needs: [build-ultra, build-others]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: 下载所有产物
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
+          path: artifacts/
 
       - name: 整理产物
         run: |
-          # 创建发布目录
           mkdir -p release
+          ARCH="${{ github.event.inputs.arch || 'ipq60xx' }}"
+          DATE_TAG="${{ needs.prepare.outputs.date-tag }}"
           
-          # 合并所有配置文件
-          find artifacts -name "*-config.tar.gz" -exec tar -xzf {} -C release \;
+          # 整理固件
+          for branch_dir in artifacts/build-*/; do
+            if [ -d "$branch_dir/targets" ]; then
+              # 提取分支缩写
+              branch_short=$(basename "$branch_dir" | cut -d'-' -f2)
+              
+              # 处理每个固件文件
+              find "$branch_dir/targets" -name "*.bin" -type f | while read firmware; do
+                # 从文件名提取设备名称和固件类型
+                filename=$(basename "$firmware")
+                device_name=$(echo "$filename" | sed -n 's/.*-\(jdcloud_re-[cs][sp]-[0-9][0-9]\)-.*/\1/p')
+                firmware_type=$(echo "$filename" | sed -n 's/.*-\(factory\|sysupgrade\)\.bin/\1/p')
+                
+                # 从文件名提取配置类型
+                config_type=$(echo "$filename" | sed -n 's/.*-\(Pro\|Max\|Ultra\)\.bin/\1/p')
+                
+                # 重命名固件
+                if [ -n "$device_name" ] && [ -n "$firmware_type" ] && [ -n "$config_type" ]; then
+                  new_filename="${branch_short}-${device_name}-${firmware_type}-${config_type}.bin"
+                  cp "$firmware" "release/$new_filename"
+                fi
+              done
+            fi
+          done
           
-          # 合并所有日志文件
-          find artifacts -name "*-log.tar.gz" -exec tar -xzf {} -C release \;
+          # 整理配置文件
+          mkdir -p release/configs
+          for branch_dir in artifacts/build-*/; do
+            if [ -f "$branch_dir/.config" ]; then
+              branch_short=$(basename "$branch_dir" | cut -d'-' -f2)
+              
+              # 从配置文件中提取设备名称
+              device_name=$(grep "CONFIG_TARGET_DEVICE_.*=y" "$branch_dir/.config" | head -1 | sed 's/CONFIG_TARGET_DEVICE_.*_DEVICE_\(.*\)=y/\1/')
+              
+              # 处理每种配置
+              for config in Ultra Max Pro; do
+                if [ -f "$branch_dir/.config.$config" ]; then
+                  cp "$branch_dir/.config.$config" "release/configs/${branch_short}-${ARCH}-${device_name}-${config}.config"
+                  cp "$branch_dir/.config.$config.buildinfo" "release/configs/${branch_short}-${ARCH}-${device_name}-${config}.config.buildinfo"
+                  cp "$branch_dir/.config.$config.manifest" "release/configs/${branch_short}-${ARCH}-${device_name}-${config}.manifest" 2>/dev/null || true
+                fi
+              done
+            fi
+          done
           
-          # 合并所有软件包
-          find artifacts -name "*-app.tar.gz" -exec tar -xzf {} -C release \;
+          # 打包配置文件
+          cd release/configs
+          tar -czf "../${ARCH}-config.tar.gz" .
+          cd - >/dev/null
           
-          # 收集所有固件
-          find artifacts -name "*.bin" -exec cp {} release/ \;
+          # 整理日志文件
+          mkdir -p release/logs
+          for branch_dir in artifacts/build-*/; do
+            if [ -f "$branch_dir/build.log" ]; then
+              branch_short=$(basename "$branch_dir" | cut -d'-' -f2)
+              cp "$branch_dir/build.log" "release/logs/${branch_short}-build.log"
+              
+              # 提取错误和警告日志
+              grep -i "error\|warning" "$branch_dir/build.log" > "release/logs/${branch_short}-errors-warnings.log" || true
+            fi
+          done
           
-          # 获取芯片架构
-          CHIP_ARCH=$(ls release/*-config.tar.gz | head -1 | cut -d'-' -f1)
+          # 打包日志文件
+          cd release/logs
+          tar -czf "../${ARCH}-log.tar.gz" .
+          cd - >/dev/null
           
-          # 创建发布说明
-          cat > release/README.md << EOF
-          # OpenWrt 固件发布
+          # 整理软件包
+          mkdir -p release/packages
+          for branch_dir in artifacts/build-*/; do
+            if [ -d "$branch_dir/packages" ]; then
+              cp -r "$branch_dir/packages/"* release/packages/ 2>/dev/null || true
+            fi
+          done
           
-          ## 基本信息
-          - **默认管理地址**: 192.168.111.1
-          - **默认用户**: root
-          - **默认密码**: none
-          - **默认WIFI密码**: 12345678
+          # 打包软件包
+          cd release/packages
+          tar -czf "../${ARCH}-app.tar.gz" .
+          cd - >/dev/null
+
+      - name: 创建发布说明
+        run: |
+          ARCH="${{ github.event.inputs.arch || 'ipq60xx' }}"
+          DATE_TAG="${{ needs.prepare.outputs.date-tag }}"
           
-          ## 固件信息
-          - **芯片架构**: $CHIP_ARCH
-          - **设备**: 京东云亚瑟、雅典娜
-          - **内核版本**: $(grep "Linux version" release/full.log | head -1 | awk '{print $3}' | tr -d ')')
+          # 创建发布说明文件
+          cat > release/NOTES.md << EOF
+          ## OpenWrt固件发布
           
-          ## 作者信息
-          - **作者**: Mary
-          - **发布时间**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **默认管理地址**: 192.168.111.1  
+          **默认用户**: root  
+          **默认密码**: none  
+          **默认WIFI密码**: 12345678  
           
-          ## 编译的软件包列表
-          $(find release/packages -name "*.ipk" | sed 's/.*\///' | sed 's/_.*//' | sort | uniq | sed 's/^/- /')
+          **固件包括**: $ARCH 的京东云亚瑟、雅典娜  
           
-          ## 文件说明
-          - 固件文件: *.bin
-          - 配置文件: $CHIP_ARCH-config.tar.gz
-          - 日志文件: $CHIP_ARCH-log.tar.gz
-          - 软件包: $CHIP_ARCH-app.tar.gz
+          **作者**: Mary  
+          **发布时间**: $(date +'%Y-%m-%d %H:%M:%S')  
+          
+          ### 编译的luci-app列表:
+          $(ls release/packages/ 2>/dev/null | grep -E 'luci-app-.*' | sort | sed 's/^/- /' || echo "无软件包信息")
+          
+          ### 文件说明:
+          - 固件文件: 命名规则为 [分支缩写]-[设备名称]-[固件类型]-[配置类型].bin
+          - ${ARCH}-config.tar.gz: 包含所有配置文件
+          - ${ARCH}-log.tar.gz: 包含编译日志
+          - ${ARCH}-app.tar.gz: 包含编译的软件包
           EOF
 
-      - name: 创建Release
+      - name: 上传发布产物
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-${{ github.event.inputs.arch || 'ipq60xx' }}
+          path: release/
+          retention-days: 7
+
+  # 发布阶段：创建GitHub Release
+  release:
+    needs: [prepare, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 下载发布产物
+        uses: actions/download-artifact@v3
+        with:
+          name: release-${{ github.event.inputs.arch || 'ipq60xx' }}
+          path: release/
+
+      - name: 创建GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: $(date -u +"%Y%m%d")-${{ env.CHIP_ARCH }}
-          name: OpenWrt 固件 - ${{ env.CHIP_ARCH }} - $(date -u +"%Y-%m-%d")
-          body_path: release/README.md
+          tag_name: ${{ needs.prepare.outputs.date-tag }}
+          name: OpenWrt固件发布 - ${{ needs.prepare.outputs.date-tag }}
+          body_path: release/NOTES.md
           files: |
             release/*.bin
             release/*.tar.gz
           draft: false
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
