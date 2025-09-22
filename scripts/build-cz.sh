@@ -1,7 +1,7 @@
 #!/bin/bash
 # OpenWrt固件编译脚本
 # 作者: Mary
-# 功能: 根据配置文件编译OpenWrt固件
+# 功能: 根据配置文件编译OpenWrt固件，支持分层编译
 
 # 严格错误退出机制 - 任何命令返回非零状态码都会立即退出脚本
 set -euo pipefail
@@ -20,11 +20,19 @@ ARCH="${ARCH:-ipq60xx}"
 BRANCH="${BRANCH:-openwrt}"
 BRANCH_SHORT="${BRANCH_SHORT:-openwrt}"
 WORKSPACE="${WORKSPACE:-$(pwd)}"
+COMPILE_STAGE="${COMPILE_STAGE:-full}"
 
 # 检查配置类型是否有效
 if [[ ! "$CONFIG_TYPE" =~ ^(Ultra|Max|Pro)$ ]]; then
     echo "错误: 无效的配置类型 '$CONFIG_TYPE'"
     echo "有效配置类型: Ultra, Max, Pro"
+    exit 1
+fi
+
+# 检查编译阶段是否有效
+if [[ ! "$COMPILE_STAGE" =~ ^(full|toolchain|kernel|base|packages|image)$ ]]; then
+    echo "错误: 无效的编译阶段 '$COMPILE_STAGE'"
+    echo "有效编译阶段: full, toolchain, kernel, base, packages, image"
     exit 1
 fi
 
@@ -57,7 +65,7 @@ handle_error() {
 trap 'handle_error $LINENO' ERR
 
 # 开始编译
-log "开始编译 $BRANCH_SHORT/$ARCH/$CONFIG_TYPE"
+log "开始编译 $BRANCH_SHORT/$ARCH/$CONFIG_TYPE (阶段: $COMPILE_STAGE)"
 
 # 检查工作目录
 if [ ! -f "Makefile" ]; then
@@ -71,7 +79,7 @@ log "合并配置文件"
 # 确保configs目录存在
 mkdir -p configs
 
-# 检查配置文件是否存在 - 修改路径为openwrt-build/configs
+# 检查配置文件是否存在
 CHIP_CONFIG="$WORKSPACE/openwrt-build/configs/${ARCH}_base.config"
 BRANCH_CONFIG="$WORKSPACE/openwrt-build/configs/${BRANCH_SHORT}_base.config"
 PACKAGE_CONFIG="$WORKSPACE/openwrt-build/configs/${CONFIG_TYPE}.config"
@@ -105,37 +113,169 @@ log "配置文件已合并并保存为 .config.$CONFIG_TYPE"
 log "更新配置"
 make defconfig >> "$LOG_FILE" 2>&1
 
-# 下载依赖
-log "下载依赖"
-make download -j$(nproc) >> "$LOG_FILE" 2>&1
-
-# 编译工具链
-log "编译工具链"
-make toolchain/install -j$(nproc) >> "$LOG_FILE" 2>&1
-
-# 编译内核
-log "编译内核"
-make target/linux/compile -j$(nproc) >> "$LOG_FILE" 2>&1
-
-# 编译基础系统
-log "编译基础系统"
-make target/compile -j$(nproc) >> "$LOG_FILE" 2>&1
-
-# 编译软件包
-log "编译软件包"
-make package/compile -j$(nproc) >> "$LOG_FILE" 2>&1
-
-# 安装软件包
-log "安装软件包"
-make package/install -j$(nproc) >> "$LOG_FILE" 2>&1
-
-# 编译目标
-log "编译目标"
-make target/install -j$(nproc) >> "$LOG_FILE" 2>&1
-
-# 生成固件
-log "生成固件"
-make image -j$(nproc) >> "$LOG_FILE" 2>&1
+# 分层编译
+case "$COMPILE_STAGE" in
+    full)
+        log "执行完整编译流程"
+        
+        # 下载依赖
+        log "下载依赖"
+        make download -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译工具链
+        log "编译工具链"
+        make toolchain/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译内核
+        log "编译内核"
+        make target/linux/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译基础系统
+        log "编译基础系统"
+        make target/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译软件包
+        log "编译软件包"
+        make package/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 安装软件包
+        log "安装软件包"
+        make package/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译目标
+        log "编译目标"
+        make target/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 生成固件
+        log "生成固件"
+        make image -j$(nproc) >> "$LOG_FILE" 2>&1
+        ;;
+        
+    toolchain)
+        log "从工具链阶段开始编译"
+        
+        # 下载依赖
+        log "下载依赖"
+        make download -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译工具链
+        log "编译工具链"
+        make toolchain/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译内核
+        log "编译内核"
+        make target/linux/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译基础系统
+        log "编译基础系统"
+        make target/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译软件包
+        log "编译软件包"
+        make package/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 安装软件包
+        log "安装软件包"
+        make package/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译目标
+        log "编译目标"
+        make target/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 生成固件
+        log "生成固件"
+        make image -j$(nproc) >> "$LOG_FILE" 2>&1
+        ;;
+        
+    kernel)
+        log "从内核阶段开始编译"
+        
+        # 编译内核
+        log "编译内核"
+        make target/linux/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译基础系统
+        log "编译基础系统"
+        make target/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译软件包
+        log "编译软件包"
+        make package/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 安装软件包
+        log "安装软件包"
+        make package/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译目标
+        log "编译目标"
+        make target/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 生成固件
+        log "生成固件"
+        make image -j$(nproc) >> "$LOG_FILE" 2>&1
+        ;;
+        
+    base)
+        log "从基础系统阶段开始编译"
+        
+        # 编译基础系统
+        log "编译基础系统"
+        make target/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译软件包
+        log "编译软件包"
+        make package/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 安装软件包
+        log "安装软件包"
+        make package/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译目标
+        log "编译目标"
+        make target/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 生成固件
+        log "生成固件"
+        make image -j$(nproc) >> "$LOG_FILE" 2>&1
+        ;;
+        
+    packages)
+        log "从软件包阶段开始编译"
+        
+        # 编译软件包
+        log "编译软件包"
+        make package/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 安装软件包
+        log "安装软件包"
+        make package/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 编译目标
+        log "编译目标"
+        make target/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 生成固件
+        log "生成固件"
+        make image -j$(nproc) >> "$LOG_FILE" 2>&1
+        ;;
+        
+    image)
+        log "从固件生成阶段开始编译"
+        
+        # 编译目标
+        log "编译目标"
+        make target/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        
+        # 生成固件
+        log "生成固件"
+        make image -j$(nproc) >> "$LOG_FILE" 2>&1
+        ;;
+        
+    *)
+        error_log "未知的编译阶段: $COMPILE_STAGE"
+        exit 1
+        ;;
+esac
 
 # 生成清单文件
 if [ -f ".config" ]; then
@@ -176,4 +316,4 @@ if [ -d "bin/targets" ]; then
     find bin/targets -name "*.ipk" -exec cp {} packages/ \;
 fi
 
-log "编译完成: $BRANCH_SHORT/$ARCH/$CONFIG_TYPE"
+log "编译完成: $BRANCH_SHORT/$ARCH/$CONFIG_TYPE (阶段: $COMPILE_STAGE)"
