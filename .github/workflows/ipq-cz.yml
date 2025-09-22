@@ -73,8 +73,6 @@ jobs:
 
       - name: 检出代码
         uses: actions/checkout@v4
-        with:
-          path: 'openwrt-build'
 
       - name: 设置缓存
         uses: actions/cache@v3
@@ -91,7 +89,7 @@ jobs:
           cd /tmp/build
           git clone --depth 1 --branch ${{ matrix.branch.branch_name }} ${{ matrix.branch.url }} openwrt
           cd openwrt
-          cp -r $GITHUB_WORKSPACE/openwrt-build/* .
+          cp -r $GITHUB_WORKSPACE/* .
           
           # 设置ccache
           export CCACHE_DIR=/tmp/ccache
@@ -108,17 +106,17 @@ jobs:
           export WORKSPACE="$GITHUB_WORKSPACE"
           
           # 执行编译脚本
-          chmod +x $GITHUB_WORKSPACE/openwrt-build/scripts/scripts-cz.sh
-          chmod +x $GITHUB_WORKSPACE/openwrt-build/scripts/build-cz.sh
+          chmod +x $GITHUB_WORKSPACE/scripts/scripts-cz.sh
+          chmod +x $GITHUB_WORKSPACE/scripts/build-cz.sh
           
           # 执行分支准备脚本
-          $GITHUB_WORKSPACE/openwrt-build/scripts/scripts-cz.sh
+          $GITHUB_WORKSPACE/scripts/scripts-cz.sh
           
           # 编译各配置
           configs=(${{ env.CONFIGS }})
           for config in "${configs[@]}"; do
             echo "编译配置: $config"
-            $GITHUB_WORKSPACE/openwrt-build/scripts/build-cz.sh "$config"
+            $GITHUB_WORKSPACE/scripts/build-cz.sh "$config"
           done
 
       - name: 收集编译产物
@@ -142,7 +140,7 @@ jobs:
           fi
 
       - name: 上传编译产物
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: build-${{ matrix.branch.short }}-${{ github.event.inputs.arch || 'ipq60xx' }}
           path: artifacts/
@@ -154,7 +152,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 下载所有编译产物
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts/
 
@@ -274,7 +272,7 @@ jobs:
           EOF
 
       - name: 上传发布产物
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: release-${{ github.event.inputs.arch || 'ipq60xx' }}
           path: release/
@@ -288,7 +286,7 @@ jobs:
       contents: write
     steps:
       - name: 下载发布产物
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: release-${{ github.event.inputs.arch || 'ipq60xx' }}
           path: release/
