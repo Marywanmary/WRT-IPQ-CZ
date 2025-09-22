@@ -191,6 +191,41 @@ jobs:
             tail -n 100 openwrt-build/build.log
             if grep -q "ERROR\|Error\|FATAL" openwrt-build/build.log; then
               echo "编译失败，发现错误"
+              
+              # 创建错误报告
+              mkdir -p error-report
+              echo "# 编译错误报告" > error-report/ERROR_REPORT.md
+              echo "## 基本信息" >> error-report/ERROR_REPORT.md
+              echo "- **芯片架构**: ${{ env.CHIP_ARCH }}" >> error-report/ERROR_REPORT.md
+              echo "- **配置文件**: ${{ matrix.config }}" >> error-report/ERROR_REPORT.md
+              echo "- **分支名称**: ${{ matrix.branch }}" >> error-report/ERROR_REPORT.md
+              echo "- **基础系统版本**: ${{ env.BASE_VERSION }}" >> error-report/ERROR_REPORT.md
+              echo "" >> error-report/ERROR_REPORT.md
+              echo "## 错误日志" >> error-report/ERROR_REPORT.md
+              echo "\`\`\`" >> error-report/ERROR_REPORT.md
+              grep -E "ERROR|Error|FATAL" openwrt-build/build.log >> error-report/ERROR_REPORT.md
+              echo "\`\`\`" >> error-report/ERROR_REPORT.md
+              
+              # 检查是否有内核编译错误
+              if [ -d openwrt-build/logs ]; then
+                echo "" >> error-report/ERROR_REPORT.md
+                echo "## 内核编译错误" >> error-report/ERROR_REPORT.md
+                for log in openwrt-build/logs/kernel_compile_*.log; do
+                  if [ -f "$log" ]; then
+                    echo "### $(basename "$log")" >> error-report/ERROR_REPORT.md
+                    echo "\`\`\`" >> error-report/ERROR_REPORT.md
+                    tail -n 50 "$log" >> error-report/ERROR_REPORT.md
+                    echo "\`\`\`" >> error-report/ERROR_REPORT.md
+                    echo "" >> error-report/ERROR_REPORT.md
+                  fi
+                done
+              fi
+              
+              # 上传错误报告
+              name: "error-report-${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}"
+              path: error-report/
+              retention-days: 30
+              
               exit 1
             fi
           fi
@@ -440,6 +475,41 @@ jobs:
             tail -n 100 openwrt-build/build.log
             if grep -q "ERROR\|Error\|FATAL" openwrt-build/build.log; then
               echo "编译失败，发现错误"
+              
+              # 创建错误报告
+              mkdir -p error-report
+              echo "# 编译错误报告" > error-report/ERROR_REPORT.md
+              echo "## 基本信息" >> error-report/ERROR_REPORT.md
+              echo "- **芯片架构**: ${{ env.CHIP_ARCH }}" >> error-report/ERROR_REPORT.md
+              echo "- **配置文件**: ${{ matrix.config }}" >> error-report/ERROR_REPORT.md
+              echo "- **分支名称**: ${{ matrix.branch }}" >> error-report/ERROR_REPORT.md
+              echo "- **基础系统版本**: ${{ env.BASE_VERSION }}" >> error-report/ERROR_REPORT.md
+              echo "" >> error-report/ERROR_REPORT.md
+              echo "## 错误日志" >> error-report/ERROR_REPORT.md
+              echo "\`\`\`" >> error-report/ERROR_REPORT.md
+              grep -E "ERROR|Error|FATAL" openwrt-build/build.log >> error-report/ERROR_REPORT.md
+              echo "\`\`\`" >> error-report/ERROR_REPORT.md
+              
+              # 检查是否有内核编译错误
+              if [ -d openwrt-build/logs ]; then
+                echo "" >> error-report/ERROR_REPORT.md
+                echo "## 内核编译错误" >> error-report/ERROR_REPORT.md
+                for log in openwrt-build/logs/kernel_compile_*.log; do
+                  if [ -f "$log" ]; then
+                    echo "### $(basename "$log")" >> error-report/ERROR_REPORT.md
+                    echo "\`\`\`" >> error-report/ERROR_REPORT.md
+                    tail -n 50 "$log" >> error-report/ERROR_REPORT.md
+                    echo "\`\`\`" >> error-report/ERROR_REPORT.md
+                    echo "" >> error-report/ERROR_REPORT.md
+                  fi
+                done
+              fi
+              
+              # 上传错误报告
+              name: "error-report-${{ matrix.branch }}-${{ matrix.config }}-${{ env.CHIP_ARCH }}"
+              path: error-report/
+              retention-days: 30
+              
               exit 1
             fi
           fi
