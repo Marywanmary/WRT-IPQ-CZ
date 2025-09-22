@@ -164,10 +164,7 @@ if [ -d "package/applications/luci-app-frps" ]; then
 fi
 
 git_sparse_clone main https://github.com/VIKINGYFY/packages luci-app-wolplus
-
-# 使用安全克隆函数克隆luci-app-lucky（只克隆一次）
 safe_git_clone https://github.com/gdy666/luci-app-lucky package/luci-app-lucky
-
 safe_git_clone https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
 safe_git_clone https://github.com/lwb1978/openwrt-gecoosac package/openwrt-gecoosac
 safe_git_clone https://github.com/NONGFAH/luci-app-athena-led package/luci-app-athena-led
@@ -185,7 +182,7 @@ safe_git_clone https://github.com/vernesong/OpenClash package/OpenClash
 
 # 添加kenzok8软件源并且让它的优先级最低
 log "添加kenzok8软件源"
-git clone small8 https://github.com/kenzok8/small-package
+git clone --depth=1 https://github.com/kenzok8/small package/small
 
 # 更新和安装feeds
 log "更新和安装feeds"
