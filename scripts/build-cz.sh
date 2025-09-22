@@ -58,6 +58,21 @@ handle_error() {
     local exit_code=$?
     local line_number=$1
     error_log "脚本在第 $line_number 行退出，退出代码: $exit_code"
+    
+    # 显示磁盘使用情况
+    log "磁盘使用情况:"
+    df -h | tee -a "$LOG_FILE"
+    
+    # 显示最后几行日志，帮助诊断问题
+    log "最后50行日志:"
+    tail -n 50 "$LOG_FILE" | tee -a "$ERROR_LOG_FILE"
+    
+    # 检查是否有编译错误日志
+    if [ -d "logs" ]; then
+        log "编译错误日志:"
+        find logs -name "*.log" -exec echo "=== {} ===" \; -exec tail -n 20 {} \;
+    fi
+    
     exit $exit_code
 }
 
@@ -72,6 +87,22 @@ if [ ! -f "Makefile" ]; then
     error_log "当前目录不是OpenWrt根目录"
     exit 1
 fi
+
+# 显示磁盘使用情况
+log "初始磁盘使用情况:"
+df -h | tee -a "$LOG_FILE"
+
+# 显示系统信息
+log "系统信息:"
+uname -a | tee -a "$LOG_FILE"
+log "CPU信息:"
+lscpu | grep "^Model name" | tee -a "$LOG_FILE"
+log "内存信息:"
+free -h | tee -a "$LOG_FILE"
+
+# 检查必要的工具
+log "检查必要的工具:"
+which make gcc g++ python3 git wget | tee -a "$LOG_FILE"
 
 # 合并配置文件
 log "合并配置文件"
@@ -124,31 +155,31 @@ case "$COMPILE_STAGE" in
         
         # 编译工具链
         log "编译工具链"
-        make toolchain/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        make toolchain/install -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译内核
         log "编译内核"
-        make target/linux/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        make target/linux/compile -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译基础系统
         log "编译基础系统"
-        make target/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        make target/compile -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译软件包
         log "编译软件包"
-        make package/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        make package/compile -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 安装软件包
         log "安装软件包"
-        make package/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        make package/install -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译目标
         log "编译目标"
-        make target/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        make target/install -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 生成固件
         log "生成固件"
-        make image -j$(nproc) >> "$LOG_FILE" 2>&1
+        make image -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         ;;
         
     toolchain)
@@ -160,31 +191,31 @@ case "$COMPILE_STAGE" in
         
         # 编译工具链
         log "编译工具链"
-        make toolchain/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        make toolchain/install -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译内核
         log "编译内核"
-        make target/linux/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        make target/linux/compile -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译基础系统
         log "编译基础系统"
-        make target/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        make target/compile -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译软件包
         log "编译软件包"
-        make package/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        make package/compile -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 安装软件包
         log "安装软件包"
-        make package/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        make package/install -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译目标
         log "编译目标"
-        make target/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        make target/install -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 生成固件
         log "生成固件"
-        make image -j$(nproc) >> "$LOG_FILE" 2>&1
+        make image -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         ;;
         
     kernel)
@@ -192,27 +223,27 @@ case "$COMPILE_STAGE" in
         
         # 编译内核
         log "编译内核"
-        make target/linux/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        make target/linux/compile -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译基础系统
         log "编译基础系统"
-        make target/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        make target/compile -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译软件包
         log "编译软件包"
-        make package/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        make package/compile -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 安装软件包
         log "安装软件包"
-        make package/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        make package/install -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译目标
         log "编译目标"
-        make target/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        make target/install -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 生成固件
         log "生成固件"
-        make image -j$(nproc) >> "$LOG_FILE" 2>&1
+        make image -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         ;;
         
     base)
@@ -220,23 +251,23 @@ case "$COMPILE_STAGE" in
         
         # 编译基础系统
         log "编译基础系统"
-        make target/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        make target/compile -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译软件包
         log "编译软件包"
-        make package/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        make package/compile -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 安装软件包
         log "安装软件包"
-        make package/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        make package/install -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译目标
         log "编译目标"
-        make target/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        make target/install -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 生成固件
         log "生成固件"
-        make image -j$(nproc) >> "$LOG_FILE" 2>&1
+        make image -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         ;;
         
     packages)
@@ -244,19 +275,19 @@ case "$COMPILE_STAGE" in
         
         # 编译软件包
         log "编译软件包"
-        make package/compile -j$(nproc) >> "$LOG_FILE" 2>&1
+        make package/compile -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 安装软件包
         log "安装软件包"
-        make package/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        make package/install -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 编译目标
         log "编译目标"
-        make target/install -j$(nproc) >> "$LOG_FILE" 2>&1
+        make target/install -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         
         # 生成固件
         log "生成固件"
-        make image -j$(nproc) >> "$LOG_FILE" 2>&1
+        make image -j$(nproc) V=s >> "$LOG_FILE" 2>&1
         ;;
         
     *)
