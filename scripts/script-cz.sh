@@ -47,9 +47,9 @@ sed -i "s/hostname='.*'/hostname='WRT'/g" package/base-files/files/bin/config_ge
 log "修改管理员密码为空"
 sed -i 's/root:::0:0:99999:7:::/root:$1$Vd3dV5bF$XxvYzJ7s8uK9kLpMnQoNj0:0:0:99999:7:::/g' package/base-files/files/etc/shadow
 
-# 修改无线密码为空
-log "修改无线密码为空"
-sed -i 's/option encryption .psk2+ccmp./option encryption .none./g' package/kernel/mac80211/files/lib/wifi/mac80211.sh
+# # 修改无线密码为空
+# log "修改无线密码为空"
+# sed -i 's/option encryption .psk2+ccmp./option encryption .none./g' package/kernel/mac80211/files/lib/wifi/mac80211.sh
 
 # 移除要替换的包
 log "移除要替换的包"
