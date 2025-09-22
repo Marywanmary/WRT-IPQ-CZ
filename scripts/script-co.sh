@@ -13,27 +13,64 @@ handle_error() {
     exit $exit_code
 }
 
+# 获取仓库的默认分支
+get_default_branch() {
+    local repo_url=$1
+    local default_branch=""
+    
+    # 尝试获取默认分支
+    if command -v git &> /dev/null; then
+        default_branch=$(git ls-remote --symref "$repo_url" HEAD | grep -o 'refs/heads/[^\t]*' | sed 's|refs/heads/||' | head -n1)
+    fi
+    
+    # 如果无法获取默认分支，则尝试常见分支名
+    if [ -z "$default_branch" ]; then
+        for branch in main master openwrt-21.02 openwrt-22.03; do
+            if git ls-remote --heads "$repo_url" "refs/heads/$branch" | grep -q "refs/heads/$branch"; then
+                default_branch=$branch
+                break
+            fi
+        done
+    fi
+    
+    echo "$default_branch"
+}
+
 # 改进的git clone函数
 git_clone_with_retry() {
     local url=$1
     local dir=$2
-    local branch=${3:-master}
+    local branch=${3:-}
     local retries=3
     local count=0
     local last_error=0
     
-    echo "正在克隆: $url -> $dir (分支: $branch)"
+    echo "正在克隆: $url -> $dir"
+    
+    # 如果没有指定分支，尝试获取默认分支
+    if [ -z "$branch" ]; then
+        branch=$(get_default_branch "$url")
+        echo "检测到默认分支: $branch"
+    fi
     
     while [ $count -lt $retries ]; do
-        if git clone --depth=1 -b "$branch" "$url" "$dir"; then
-            echo "克隆成功: $url"
-            return 0
+        if [ -n "$branch" ]; then
+            if git clone --depth=1 -b "$branch" "$url" "$dir" 2>/dev/null; then
+                echo "克隆成功: $url (分支: $branch)"
+                return 0
+            fi
         else
-            last_error=$?
-            count=$((count+1))
-            echo "克隆失败 (退出码: $last_error), 重试 $count/$retries..."
-            sleep 2
+            # 如果没有指定分支且无法获取默认分支，尝试不指定分支克隆
+            if git clone --depth=1 "$url" "$dir" 2>/dev/null; then
+                echo "克隆成功: $url (默认分支)"
+                return 0
+            fi
         fi
+        
+        last_error=$?
+        count=$((count+1))
+        echo "克隆失败 (退出码: $last_error), 重试 $count/$retries..."
+        sleep 2
     done
     
     echo "错误: 克隆失败，已重试 $retries 次"
@@ -45,6 +82,8 @@ setup_git() {
     echo "正在配置git..."
     git config --global http.sslverify false
     git config --global url."https://github.com/".insteadOf "git@github.com:"
+    git config --global http.postBuffer 524288000
+    git config --global core.compression 0
     echo "Git配置完成"
 }
 
@@ -82,14 +121,14 @@ git_sparse_clone() {
     
     cd "$repodir" || { echo "错误: 无法进入目录 $repodir"; return 1; }
     echo "正在设置稀疏检出: $@"
-    if ! git sparse-checkout set "$@"; then
+    if ! git sparse-checkout set "$@" 2>/dev/null; then
         echo "错误: 稀疏检出设置失败"
         cd ..
         return 1
     fi
     
     echo "正在移动文件到 ${PACKAGE_DIR}"
-    if ! mv -f "$@" "../${PACKAGE_DIR}"; then
+    if ! mv -f "$@" "../${PACKAGE_DIR}" 2>/dev/null; then
         echo "错误: 文件移动失败"
         cd ..
         return 1
@@ -113,7 +152,7 @@ if ! git_clone_with_retry "https://github.com/openwrt/packages.git" "${PACKAGE_D
     echo "警告: boost 克隆失败，跳过"
 else
     cd "${PACKAGE_DIR}/boost" || { echo "错误: 无法进入boost目录"; exit 1; }
-    if ! git sparse-checkout set libs/boost; then
+    if ! git sparse-checkout set libs/boost 2>/dev/null; then
         echo "警告: boost稀疏检出失败"
     fi
     cd ../.. || { echo "错误: 无法返回上级目录"; exit 1; }
