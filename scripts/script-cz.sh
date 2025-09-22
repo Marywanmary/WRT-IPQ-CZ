@@ -34,9 +34,13 @@ git_sparse_clone() {
   cd .. && rm -rf $repodir
 }
 
-# 克隆定制包
+# 克隆基础定制包（与内核编译无关的包）
+echo "=== 克隆基础定制包 ==="
 git clone --depth=1 https://github.com/sbwml/packages_lang_golang -b 24.x feeds/packages/lang/golang
 git clone --depth=1 https://github.com/sbwml/luci-app-openlist2 package/openlist
+
+# 克隆frp相关包（与内核编译无关）
+echo "=== 克隆frp相关包 ==="
 git_sparse_clone frp https://github.com/laipeng668/packages net/frp
 mkdir -p feeds/packages/net
 mv -f package/frp feeds/packages/net/frp
@@ -46,21 +50,26 @@ mkdir -p feeds/luci/applications
 mv -f package/luci-app-frpc feeds/luci/applications/luci-app-frpc
 mv -f package/luci-app-frps feeds/luci/applications/luci-app-frps
 
+# 克隆LED控制包（与内核编译无关）
+echo "=== 克隆LED控制包 ==="
 git clone --depth=1 https://github.com/NONGFAH/luci-app-athena-led package/luci-app-athena-led
 chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena-led
 
-# Mary定制包
+# 克隆Mary定制包（只选择与内核编译无关的包）
+echo "=== 克隆Mary定制包 ==="
 git clone --depth=1 https://github.com/sirpdboy/luci-app-netspeedtest package/netspeedtest
 git clone --depth=1 https://github.com/sirpdboy/luci-app-partexp package/luci-app-partexp
 git clone --depth=1 https://github.com/sirpdboy/luci-app-taskplan package/luci-app-taskplan
 git_sparse_clone main https://github.com/VIKINGYFY/packages luci-app-timewol
 git_sparse_clone main https://github.com/VIKINGYFY/packages luci-app-wolplus
-git clone --depth=1 https://github.com/tailscale/tailscale package/tailscale
-git clone --depth=1 https://github.com/gdy666/luci-app-lucky package/luci-app-lucky
-git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo package/luci-app-momo
-git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki package/nikki
-git clone --depth=1 https://github.com/vernesong/OpenClash package/OpenClash
-git clone https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
+
+# 暂不添加可能与内核编译冲突的包
+# git clone --depth=1 https://github.com/tailscale/tailscale package/tailscale
+# git clone --depth=1 https://github.com/gdy666/luci-app-lucky package/luci-app-lucky
+# git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo package/luci-app-momo
+# git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki package/nikki
+# git clone --depth=1 https://github.com/vernesong/OpenClash package/OpenClash
+# git clone https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
 
 # ====== 添加kenzok8软件源并且让它的优先级最低 ======
 git clone --depth=1 https://github.com/kenzok8/small-package package/small8
@@ -68,6 +77,13 @@ git clone --depth=1 https://github.com/kenzok8/small-package package/small8
 # 再次清理冲突包
 UNWANTED_PKGS=(luci-app-torbp luci-app-alist luci-app-qbittorrent luci-app-nat6-helper ua2f natmap)
 for pkg in "${UNWANTED_PKGS[@]}"; do
+  rm -rf package/small8/$pkg feeds/luci/applications/$pkg feeds/packages/net/$pkg package/$pkg || true
+done
+
+# 清理可能与内核编译冲突的包
+echo "=== 清理可能与内核编译冲突的包 ==="
+CONFLICT_PKGS=(tailscale luci-app-lucky luci-app-momo nikki OpenClash OpenAppFilter)
+for pkg in "${CONFLICT_PKGS[@]}"; do
   rm -rf package/small8/$pkg feeds/luci/applications/$pkg feeds/packages/net/$pkg package/$pkg || true
 done
 
