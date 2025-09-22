@@ -119,6 +119,22 @@ function git_sparse_clone() {
     rm -rf "$temp_dir"
 }
 
+# 安全克隆函数，避免目录冲突
+function safe_git_clone() {
+    local url="$1"
+    local target_dir="$2"
+    
+    # 如果目标目录已存在，先删除
+    if [ -d "$target_dir" ]; then
+        log "目标目录已存在，删除: $target_dir"
+        rm -rf "$target_dir"
+    fi
+    
+    # 克隆仓库
+    log "克隆: $url -> $target_dir"
+    git clone --depth=1 "$url" "$target_dir"
+}
+
 # Go & OpenList & ariang & frp & AdGuardHome & WolPlus & Lucky & OpenAppFilter & 集客无线AC控制器 & 雅典娜LED控制
 log "克隆自定义软件包"
 git clone --depth=1 https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang
@@ -148,22 +164,25 @@ if [ -d "package/applications/luci-app-frps" ]; then
 fi
 
 git_sparse_clone main https://github.com/VIKINGYFY/packages luci-app-wolplus
-git clone --depth=1 https://github.com/gdy666/luci-app-lucky package/luci-app-lucky
-git clone --depth=1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
-git clone --depth=1 https://github.com/lwb1978/openwrt-gecoosac package/openwrt-gecoosac
-git clone --depth=1 https://github.com/NONGFAH/luci-app-athena-led package/luci-app-athena-led
+
+# 使用安全克隆函数克隆luci-app-lucky（只克隆一次）
+safe_git_clone https://github.com/gdy666/luci-app-lucky package/luci-app-lucky
+
+safe_git_clone https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
+safe_git_clone https://github.com/lwb1978/openwrt-gecoosac package/openwrt-gecoosac
+safe_git_clone https://github.com/NONGFAH/luci-app-athena-led package/luci-app-athena-led
 chmod +x package/luci-app-athena-led/root/etc/init.d/athena_led package/luci-app-athena-led/root/usr/sbin/athena-led
 
 # Mary定制包
 log "克隆Mary定制软件包"
-git clone --depth=1 https://github.com/sirpdboy/luci-app-netspeedtest package/netspeedtest
-git clone --depth=1 https://github.com/sirpdboy/luci-app-partexp package/luci-app-partexp
-git clone --depth=1 https://github.com/sirpdboy/luci-app-taskplan package/luci-app-taskplan
-git clone --depth=1 https://github.com/tailscale/tailscale package/tailscale
-git clone --depth=1 https://github.com/gdy666/luci-app-lucky package/luci-app-lucky
-git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo package/luci-app-momo
-git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki package/nikki
-git clone --depth=1 https://github.com/vernesong/OpenClash package/OpenClash
+safe_git_clone https://github.com/sirpdboy/luci-app-netspeedtest package/netspeedtest
+safe_git_clone https://github.com/sirpdboy/luci-app-partexp package/luci-app-partexp
+safe_git_clone https://github.com/sirpdboy/luci-app-taskplan package/luci-app-taskplan
+safe_git_clone https://github.com/tailscale/tailscale package/tailscale
+# 注意：luci-app-lucky已经在上面克隆过了，这里不再重复克隆
+safe_git_clone https://github.com/nikkinikki-org/OpenWrt-momo package/luci-app-momo
+safe_git_clone https://github.com/nikkinikki-org/OpenWrt-nikki package/nikki
+safe_git_clone https://github.com/vernesong/OpenClash package/OpenClash
 
 # 添加kenzok8软件源并且让它的优先级最低
 log "添加kenzok8软件源"
