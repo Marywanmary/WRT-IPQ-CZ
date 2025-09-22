@@ -25,6 +25,8 @@ RUN apt-get update && apt-get install -y \
     wget \
     xz-utils \
     rsync \
+    flex \
+    bison \
     && rm -rf /var/lib/apt/lists/*
 
 # 创建工作目录
