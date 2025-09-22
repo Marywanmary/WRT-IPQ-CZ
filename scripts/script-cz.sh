@@ -41,7 +41,7 @@ log "开始准备OpenWrt编译环境"
 log "修改默认配置"
 sed -i 's/192.168.1.1/192.168.111.1/g' package/base-files/files/bin/config_generate
 sed -i "s/hostname='.*'/hostname='WRT'/g" package/base-files/files/bin/config_generate
-# sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
+sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
 
 # 修改管理员密码为空
 log "修改管理员密码为空"
@@ -49,7 +49,7 @@ sed -i 's/root:::0:0:99999:7:::/root:$1$Vd3dV5bF$XxvYzJ7s8uK9kLpMnQoNj0:0:0:9999
 
 # 修改无线密码为空
 log "修改无线密码为空"
-sed -i 's/option encryption \'psk2+ccmp\'/option encryption \'none\'/g' package/kernel/mac80211/files/lib/wifi/mac80211.sh
+sed -i 's/option encryption .psk2+ccmp./option encryption .none./g' package/kernel/mac80211/files/lib/wifi/mac80211.sh
 
 # 移除要替换的包
 log "移除要替换的包"
