@@ -41,7 +41,8 @@ jobs:
       - name: 设置编译矩阵
         id: set-matrix
         run: |
-          matrix=$(echo '${{ env.BRANCHES }}' | jq -c '.[] | {branch: .name, url: .url, branch_name: .branch, short: .short}')
+          # 将BRANCHES环境变量转换为矩阵格式
+          matrix=$(echo '${{ env.BRANCHES }}' | jq -c '[.[] | {branch: .name, url: .url, branch_name: .branch, short: .short}]')
           echo "matrix=$matrix" >> $GITHUB_OUTPUT
 
   # 编译阶段：并行编译各分支和配置
@@ -53,7 +54,7 @@ jobs:
         branch: ${{ fromJson(needs.prepare.outputs.matrix) }}
       max-parallel: 3  # 分支级并行
     container:
-      image: ubuntu:22.04  # 直接指定镜像而不是使用环境变量
+      image: ubuntu:22.04
     steps:
       - name: 初始磁盘清理
         run: |
