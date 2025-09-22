@@ -75,54 +75,9 @@ jobs:
       image: ${{ github.event.inputs.runner_os == 'ubuntu-24.04' && 'ubuntu:24.04' || 'ubuntu:22.04' }}
       options: --privileged  # 添加特权模式，以便清理磁盘空间
     steps:
-      - name: 清理宿主机磁盘空间
+      - name: 清理磁盘空间（容器内）
         run: |
-          echo "清理宿主机磁盘空间..."
-          
-          # 显示清理前的磁盘使用情况
-          df -h
-          
-          # 删除不需要的软件包（在宿主机上运行，需要sudo）
-          sudo apt-get update
-          sudo apt-get remove -y '^aspnetcore-.*' --fix-missing || true
-          sudo apt-get remove -y '^dotnet-.*' --fix-missing || true
-          sudo apt-get remove -y '^llvm-.*' --fix-missing || true
-          sudo apt-get remove -y 'php.*' --fix-missing || true
-          sudo apt-get remove -y '^mongodb-.*' --fix-missing || true
-          sudo apt-get remove -y azure-cli google-chrome-stable firefox powershell mono-devel libgl1-mesa-dri --fix-missing || true
-          
-          # 清理包管理器缓存
-          sudo apt-get autoremove -y || true
-          sudo apt-get clean || true
-          
-          # 删除不需要的目录
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost || true
-          
-          # 清理Docker镜像（如果可用）
-          if command -v docker &> /dev/null; then
-            sudo docker system prune -af || true
-          fi
-          
-          # 清理日志文件
-          sudo find /var/log -type f -name "*.log" -exec rm -f {} \; || true
-          sudo find /var/log -type f -name "*.gz" -exec rm -f {} \; || true
-          
-          # 清理临时文件
-          sudo rm -rf /tmp/* || true
-          sudo rm -rf /var/tmp/* || true
-          
-          # 显示清理后的磁盘使用情况
-          df -h
-        shell: bash
-
-      - name: 检出代码
-        uses: actions/checkout@v4
-        with:
-          path: 'openwrt-build'
-
-      - name: 清理容器内部磁盘空间
-        run: |
-          echo "清理容器内部磁盘空间..."
+          echo "清理磁盘空间..."
           
           # 显示清理前的磁盘使用情况
           df -h
@@ -143,6 +98,11 @@ jobs:
           # 删除不需要的目录
           rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost || true
           
+          # 清理Docker镜像（如果可用）
+          if command -v docker &> /dev/null; then
+            docker system prune -af || true
+          fi
+          
           # 清理日志文件
           find /var/log -type f -name "*.log" -exec rm -f {} \; || true
           find /var/log -type f -name "*.gz" -exec rm -f {} \; || true
@@ -151,8 +111,24 @@ jobs:
           rm -rf /tmp/* || true
           rm -rf /var/tmp/* || true
           
+          # 清理APT缓存
+          rm -rf /var/lib/apt/lists/* || true
+          
+          # 清理文档和手册页
+          rm -rf /usr/share/doc/* || true
+          rm -rf /usr/share/man/* || true
+          
+          # 清理locale数据
+          rm -rf /usr/share/locale/* || true
+          find /usr/share/locale -name "*.mo" -exec rm -f {} \; || true
+          
           # 显示清理后的磁盘使用情况
           df -h
+
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          path: 'openwrt-build'
 
       - name: 设置编译环境
         run: |
