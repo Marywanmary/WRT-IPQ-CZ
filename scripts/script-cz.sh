@@ -105,7 +105,16 @@ function git_sparse_clone() {
     # 移动文件到目标目录
     for dir in "${dirs[@]}"; do
         if [ -d "$temp_dir/$repodir/$dir" ]; then
-            mv -f "$temp_dir/$repodir/$dir" "package/"
+            # 确保目标目录存在
+            local target_dir="package/$dir"
+            if [[ "$target_dir" == feeds* ]]; then
+                mkdir -p "$(dirname "$target_dir")"
+            else
+                mkdir -p "$(dirname "$target_dir")"
+            fi
+            
+            # 移动文件
+            mv -f "$temp_dir/$repodir/$dir" "$target_dir"
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] 已移动: $dir" | tee -a "$log_file"
         fi
     done
@@ -119,8 +128,12 @@ log "克隆自定义软件包"
 git clone --depth=1 https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang
 git clone --depth=1 https://github.com/sbwml/luci-app-openlist2 package/openlist
 git_sparse_clone ariang https://github.com/laipeng668/packages net/ariang
+
+# 先创建目标目录，再移动frp包
+mkdir -p feeds/packages/net
 git_sparse_clone frp https://github.com/laipeng668/packages net/frp
 mv -f package/frp feeds/packages/net/frp
+
 git_sparse_clone frp https://github.com/laipeng668/luci applications/luci-app-frpc applications/luci-app-frps
 mv -f package/luci-app-frpc feeds/luci/applications/luci-app-frpc
 mv -f package/luci-app-frps feeds/luci/applications/luci-app-frps
