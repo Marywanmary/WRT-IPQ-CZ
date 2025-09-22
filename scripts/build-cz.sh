@@ -105,16 +105,28 @@ if [ ! -f "$PROFILE_CONFIG" ]; then
     exit 1
 fi
 
-# 合并配置文件 (按照优先级: 芯片配置 < 分支配置 < 软件包配置)
+# 创建临时配置文件
 cat "$CHIP_CONFIG" > "$CONFIG_FILE"
 if [ -f "../configs/$BRANCH_CONFIG" ]; then
     cat "../configs/$BRANCH_CONFIG" >> "$CONFIG_FILE"
 fi
 cat "$PROFILE_CONFIG" >> "$CONFIG_FILE"
 
-# 应用配置
-echo "=== 应用配置 ==="
+# 应用配置并解决冲突
+echo "=== 应用配置并解决冲突 ==="
 make defconfig
+
+# 验证配置
+echo "=== 验证配置 ==="
+if ! ./scripts/diffconfig.sh > /dev/null; then
+    echo "警告: 配置验证失败，尝试修复..."
+    # 尝试修复配置
+    make defconfig
+    if ! ./scripts/diffconfig.sh > /dev/null; then
+        echo "错误: 无法修复配置问题"
+        exit 1
+    fi
+fi
 
 # 分层编译
 echo "=== 分层编译开始 ==="
@@ -155,23 +167,100 @@ fi
 # 3. 内核编译 (添加详细日志和错误处理)
 if [ ! -d "build_dir/target-*/linux-*/" ]; then
     echo "=== 编译内核 ==="
-    # 先尝试单线程编译，如果有问题可以看到详细错误
-    if ! make target/linux/compile -j1 V=s; then
+    
+    # 创建日志目录
+    mkdir -p logs
+    
+    # 先尝试单线程编译，以便查看详细错误
+    echo "=== 第一次尝试：单线程编译内核 ==="
+    if make target/linux/compile -j1 V=s 2>&1 | tee logs/kernel_compile_1.log; then
+        echo "=== 内核编译成功 ==="
+    else
         echo "错误: 内核编译失败，尝试使用不同的编译选项..."
+        
+        # 保存错误日志
+        cp logs/kernel_compile_1.log logs/kernel_compile_error.log
+        
+        # 分析错误日志
+        echo "=== 分析错误日志 ==="
+        if grep -q "undefined reference to" logs/kernel_compile_error.log; then
+            echo "检测到未定义引用错误，可能是链接问题"
+        fi
+        
+        if grep -q "No rule to make target" logs/kernel_compile_error.log; then
+            echo "检测到缺少目标规则，可能是依赖问题"
+        fi
+        
         # 清理内核编译目录
+        echo "=== 清理内核编译目录 ==="
         rm -rf build_dir/target-*/linux-*/
+        
         # 禁用可能有问题的包
         echo "=== 禁用可能有问题的包 ==="
         echo "# CONFIG_PACKAGE_kmod-qca-nss-crypto is not set" >> .config
         echo "# CONFIG_PACKAGE_kmod-qca-nss-drv is not set" >> .config
         echo "# CONFIG_PACKAGE_kmod-qca-nss-clients is not set" >> .config
         echo "# CONFIG_PACKAGE_nss-firmware is not set" >> .config
+        
+        # 禁用OpenAppFilter相关包
+        echo "# CONFIG_PACKAGE_kmod-open-app-filter is not set" >> .config
+        echo "# CONFIG_PACKAGE_open-app-filter is not set" >> .config
+        
+        # 禁用其他可能与内核冲突的包
+        echo "# CONFIG_PACKAGE_kmod-tailscale is not set" >> .config
+        
+        # 重新应用配置
         make defconfig
+        
         # 再次尝试编译内核
-        make target/linux/compile -j$(nproc) || {
+        echo "=== 第二次尝试：编译内核（禁用问题包后）==="
+        if make target/linux/compile -j$(nproc) 2>&1 | tee logs/kernel_compile_2.log; then
+            echo "=== 内核编译成功 ==="
+        else
             echo "错误: 内核编译失败，即使禁用了问题包"
-            exit 1
-        }
+            
+            # 保存错误日志
+            cp logs/kernel_compile_2.log logs/kernel_compile_error_2.log
+            
+            # 尝试使用最小配置
+            echo "=== 第三次尝试：使用最小配置编译内核 ==="
+            
+            # 备份当前配置
+            cp .config .config.backup
+            
+            # 创建最小配置
+            echo "=== 创建最小配置 ==="
+            make defconfig
+            
+            # 只保留最基本的配置
+            echo "=== 清理非必要配置 ==="
+            ./scripts/diffconfig.sh | grep -v "^#" | grep -v "^$" > .config.minimal
+            mv .config.minimal .config
+            
+            # 重新应用配置
+            make defconfig
+            
+            # 尝试编译内核
+            if make target/linux/compile -j$(nproc) 2>&1 | tee logs/kernel_compile_3.log; then
+                echo "=== 内核编译成功（使用最小配置）==="
+                
+                # 恢复原始配置
+                mv .config.backup .config
+                make defconfig
+            else
+                echo "错误: 内核编译失败，即使使用最小配置"
+                
+                # 保存错误日志
+                cp logs/kernel_compile_3.log logs/kernel_compile_error_3.log
+                
+                # 恢复原始配置
+                mv .config.backup .config
+                make defconfig
+                
+                # 退出并返回错误
+                exit 1
+            fi
+        fi
     fi
 else
     echo "=== 使用缓存的内核 ==="
