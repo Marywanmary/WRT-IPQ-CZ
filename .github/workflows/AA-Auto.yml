@@ -309,7 +309,7 @@ jobs:
           git clone --depth=1 https://github.com/vernesong/OpenClash $OPENWRT_PATH/package/OpenClash
 
           # ====== 添加kenzok8软件源并且让它的优先级最低，也就是如果有软件包冲突，它的软件包会被其它软件源替代。 ======
-          git clone small8 https://github.com/kenzok8/small-package
+          git clone --depth=1 https://github.com/ $OPENWRT_PATH/small8
 
           cd $OPENWRT_PATH
           ./scripts/feeds update -a
