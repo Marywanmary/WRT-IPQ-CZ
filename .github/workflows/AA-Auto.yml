@@ -16,9 +16,10 @@ on:
       start_stage:
         description: '选择开始编译的阶段'
         required: true
-        default: 'toolchain'
+        default: 'full'  # 默认为完整编译
         type: choice
         options:
+          - full           # 完整编译（从工具链开始）
           - toolchain      # 工具链编译
           - packages       # 依赖包编译
           - kernel         # 内核编译
@@ -89,21 +90,24 @@ jobs:
       - name: 生成编译矩阵
         id: set-matrix
         run: |
+          # 将环境变量转换为单行JSON字符串
+          BRANCHES_JSON=$(echo '${{ env.BRANCHES }}' | tr -d '\n')
+          PACKAGES_JSON=$(echo '${{ env.PACKAGE_CONFIGS }}' | tr -d '\n')
+          
           # 使用jq工具生成矩阵变量，组合所有分支和软件包配置
-          MATRIX=$(echo '${{ env.BRANCHES }}' '${{ env.PACKAGE_CONFIGS }}' | jq -s '
-            {
-              "include": [
-                .[0][] as $branch | .[1][] as $pkg | {
-                  "branch_name": $branch.name,
-                  "branch_url": $branch.url,
-                  "branch_ref": $branch.branch,
-                  "branch_config": $branch.base_config,
-                  "pkg_name": $pkg.name,
-                  "pkg_config": $pkg.file
-                }
-              ]
-            }
-          ')
+          MATRIX=$(jq -n --argjson branches "$BRANCHES_JSON" --argjson packages "$PACKAGES_JSON" '{
+            include: [
+              $branches[] as $branch | $packages[] as $pkg | {
+                branch_name: $branch.name,
+                branch_url: $branch.url,
+                branch_ref: $branch.branch,
+                branch_config: $branch.base_config,
+                pkg_name: $pkg.name,
+                pkg_config: $pkg.file
+              }
+            ]
+          }')
+          
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
           echo "生成的编译矩阵："
           echo "$MATRIX" | jq .
@@ -190,7 +194,7 @@ jobs:
           echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
 
       - name: 恢复工具链缓存
-        if: github.event.inputs.start_stage != 'toolchain'
+        if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
         uses: actions/cache@main
         with:
           key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-toolchain
@@ -201,7 +205,7 @@ jobs:
         continue-on-error: true
 
       - name: 检查工具链缓存
-        if: github.event.inputs.start_stage != 'toolchain'
+        if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
         run: |
           if [ ! -d "$OPENWRT_PATH/staging_dir/toolchain-arm_cortex-a53+neon-vfpv4_gcc-13.3.0_musl_eabi" ]; then
             echo "错误：工具链缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
@@ -209,7 +213,7 @@ jobs:
           fi
 
       - name: 编译工具链
-        if: github.event.inputs.start_stage == 'toolchain'
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译工具链..."
@@ -217,7 +221,7 @@ jobs:
           echo "工具链编译完成"
 
       - name: 缓存工具链
-        if: github.event.inputs.start_stage == 'toolchain'
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
           key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-toolchain ${{ env.CACHE_DATE }}
@@ -248,7 +252,7 @@ jobs:
           fi
 
       - name: 加载自定义配置
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
         run: |
           # 修改默认IP & 固件名称 & 编译署名
           sed -i 's/192.168.1.1/192.168.111.1/g' $OPENWRT_PATH/package/base-files/files/bin/config_generate
@@ -304,7 +308,7 @@ jobs:
           git clone --depth=1 https://github.com/gdy666/luci-app-lucky $OPENWRT_PATH/package/luci-app-lucky
           git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo $OPENWRT_PATH/package/luci-app-momo
           git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki $OPENWRT_PATH/package/nikki
-          git clone --depth=1 https://github.com/vernesong/OpenClash $OPENWRT_PATH/package/OpenClash
+          git clone --depth=1 https://github.com/vernesson/OpenClash $OPENWRT_PATH/package/OpenClash
 
           # ====== 添加kenzok8软件源并且让它的优先级最低，也就是如果有软件包冲突，它的软件包会被其它软件源替代。 ======
           git clone small8 https://github.com/kenzok8/small-package
@@ -314,7 +318,7 @@ jobs:
           ./scripts/feeds install -a
 
       - name: 编译依赖包
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译依赖包..."
@@ -322,7 +326,7 @@ jobs:
           echo "依赖包编译完成"
 
       - name: 缓存依赖包
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
           key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-packages ${{ env.CACHE_DATE }}
@@ -353,7 +357,7 @@ jobs:
           fi
 
       - name: 编译内核
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel'
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译内核..."
@@ -361,7 +365,7 @@ jobs:
           echo "内核编译完成"
 
       - name: 缓存内核
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel'
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
           key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-kernel ${{ env.CACHE_DATE }}
@@ -390,7 +394,7 @@ jobs:
           fi
 
       - name: 编译基础系统
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base'
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译基础系统..."
@@ -399,7 +403,7 @@ jobs:
           echo "基础系统编译完成"
 
       - name: 缓存基础系统
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base'
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
           key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-base ${{ env.CACHE_DATE }}
@@ -409,7 +413,7 @@ jobs:
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
 
       - name: 编译软件包并生成固件
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk' || github.event.inputs.start_stage == 'full'
         id: compile
         run: |
           cd $OPENWRT_PATH
