@@ -232,7 +232,7 @@ jobs:
           # 修改默认IP & 固件名称 & 编译署名
           sed -i 's/192.168.1.1/192.168.111.1/g' $OPENWRT_PATH/package/base-files/files/bin/config_generate
           sed -i "s/hostname='.*'/hostname='WRT'/g" $OPENWRT_PATH/package/base-files/files/bin/config_generate
-          sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" $OPENWRT_PATH/feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
+          # sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" $OPENWRT_PATH/feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
 
           # 修改管理员密码和无线密码为空
           sed -i 's/root:::0:0:99999:7:::/root:$1$Vt0N2QhY$T8mXfJ7gJf9L7P6F5b4D8.:18232:0:99999:7:::/g' $OPENWRT_PATH/package/base-files/files/etc/shadow
