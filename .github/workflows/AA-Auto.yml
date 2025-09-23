@@ -35,44 +35,6 @@ env:
   CHIP_TYPE: ipq60xx
   # 芯片基础配置文件路径
   CHIP_BASE_FILE: configs/ipq60xx_base.config
-  # 分支配置列表，包含3个OpenWrt分支
-  BRANCHES: |
-    [
-      {
-        "name": "immwrt",
-        "url": "https://github.com/laipeng668/immortalwrt.git",
-        "branch": "master",
-        "base_config": "configs/immwrt_base.config"
-      },
-      {
-        "name": "openwrt",
-        "url": "https://github.com/laipeng668/openwrt.git",
-        "branch": "master",
-        "base_config": "configs/opwrt_base.config"
-      },
-      {
-        "name": "libwrt",
-        "url": "https://github.com/laipeng668/openwrt-6.x.git",
-        "branch": "k6.12-nss",
-        "base_config": "configs/libwrt_base.config"
-      }
-    ]
-  # 软件包配置列表，包含3种不同配置
-  PACKAGE_CONFIGS: |
-    [
-      {
-        "name": "Pro",
-        "file": "configs/Pro.config"
-      },
-      {
-        "name": "Max",
-        "file": "configs/Max.config"
-      },
-      {
-        "name": "Ultra",
-        "file": "configs/Ultra.config"
-      }
-    ]
   # 未来可能支持的芯片类型（注释掉，预留参数化支持）
   # FUTURE_CHIP_TYPES: ipq80xx, mtk
 
@@ -90,9 +52,42 @@ jobs:
       - name: 生成编译矩阵
         id: set-matrix
         run: |
-          # 将环境变量中的多行JSON转换为单行JSON字符串
-          BRANCHES_JSON=$(echo '${{ env.BRANCHES }}' | jq -c '.')
-          PACKAGES_JSON=$(echo '${{ env.PACKAGE_CONFIGS }}' | jq -c '.')
+          # 直接定义分支和软件包配置的JSON数据，避免多行字符串问题
+          BRANCHES_JSON='[
+            {
+              "name": "immwrt",
+              "url": "https://github.com/laipeng668/immortalwrt.git",
+              "branch": "master",
+              "base_config": "configs/immwrt_base.config"
+            },
+            {
+              "name": "openwrt",
+              "url": "https://github.com/laipeng668/openwrt.git",
+              "branch": "master",
+              "base_config": "configs/opwrt_base.config"
+            },
+            {
+              "name": "libwrt",
+              "url": "https://github.com/laipeng668/openwrt-6.x.git",
+              "branch": "k6.12-nss",
+              "base_config": "configs/libwrt_base.config"
+            }
+          ]'
+          
+          PACKAGES_JSON='[
+            {
+              "name": "Pro",
+              "file": "configs/Pro.config"
+            },
+            {
+              "name": "Max",
+              "file": "configs/Max.config"
+            },
+            {
+              "name": "Ultra",
+              "file": "configs/Ultra.config"
+            }
+          ]'
           
           # 使用jq工具生成矩阵变量，组合所有分支和软件包配置
           MATRIX=$(jq -n --argjson branches "$BRANCHES_JSON" --argjson packages "$PACKAGES_JSON" '{
@@ -504,7 +499,19 @@ jobs:
         with:
           path: ${{ github.workspace }}/artifacts
           
+      - name: 检查构建产物
+        id: check-artifacts
+        run: |
+          # 检查artifacts目录是否存在
+          if [ -d "${{ github.workspace }}/artifacts" ]; then
+            echo "artifacts-exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "artifacts-exists=false" >> $GITHUB_OUTPUT
+            echo "警告：没有找到构建产物，跳过发布步骤"
+          fi
+          
       - name: 整理发布文件
+        if: steps.check-artifacts.outputs.artifacts-exists == 'true'
         run: |
           # 创建最终发布目录
           mkdir -p ${{ github.workspace }}/release
@@ -535,6 +542,7 @@ jobs:
           echo "RELEASE_PATH=${{ github.workspace }}/release" >> $GITHUB_ENV
           
       - name: 创建发布
+        if: steps.check-artifacts.outputs.artifacts-exists == 'true'
         uses: ncipollo/release-action@main
         with:
           name: ${{ env.DATE }} for ${{ env.CHIP_TYPE }}
