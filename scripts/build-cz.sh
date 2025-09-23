@@ -69,11 +69,41 @@ handle_error() {
     
     # 检查工具链编译错误
     log "检查工具链编译错误:"
+    if [ -d "staging_dir/host/stamp" ]; then
+        log "工具链编译状态文件:"
+        ls -la staging_dir/host/stamp/.tools_compile* 2>/dev/null | tee -a "$ERROR_LOG_FILE"
+        
+        # 检查工具链编译状态
+        for stamp_file in staging_dir/host/stamp/.tools_compile*; do
+            if [ -f "$stamp_file" ]; then
+                stamp_name=$(basename "$stamp_file")
+                tools_status=${stamp_name#.tools_compile_}
+                log "工具链状态: $tools_status"
+                
+                # 获取工具列表
+                log "工具列表:"
+                make -s tools/show-info 2>/dev/null | head -20 | tee -a "$ERROR_LOG_FILE"
+                
+                # 解析工具状态
+                i=0
+                for status in $(echo $tools_status | fold -w1); do
+                    if [ "$status" = "n" ]; then
+                        tool_name=$(make -s tools/show-info 2>/dev/null | sed -n "$((i+1))p" | cut -d' ' -f1)
+                        error_log "工具编译失败: $tool_name"
+                    fi
+                    i=$((i+1))
+                done
+            fi
+        done
+    fi
+    
+    # 检查工具编译日志
+    log "检查工具编译日志:"
     if [ -d "build_dir" ]; then
         find build_dir -name "*.log" -path "*/tools/*" -exec echo "=== {} ===" \; -exec tail -n 20 {} \; | tee -a "$ERROR_LOG_FILE"
     fi
     
-    # 检查是否有编译失败的工具
+    # 检查编译失败的工具
     log "检查编译失败的工具:"
     if [ -d "build_dir" ]; then
         find build_dir -name ".built" -path "*/tools/*" -exec sh -c 'if [ ! -f {} ]; then echo "工具编译失败: $(dirname {})"; fi' \; | tee -a "$ERROR_LOG_FILE"
