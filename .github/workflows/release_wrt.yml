@@ -111,6 +111,10 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@main
 
+      - name: 给脚本添加执行权限
+        run: |
+          chmod +x $GITHUB_WORKSPACE/scripts/*.sh
+
       - name: 克隆源代码
         run: |
           # 显示工作空间磁盘使用情况
@@ -292,7 +296,7 @@ jobs:
       - name: 检查基础系统缓存
         if: github.event.inputs.start_stage == 'ipk'
         run: |
-          if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpf4_musl_eabi/root-"* ]; then
+          if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-"* ]; then
             echo "错误：基础系统缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
             exit 1
           fi
@@ -433,6 +437,10 @@ jobs:
 
       - name: 检出代码
         uses: actions/checkout@main
+
+      - name: 给脚本添加执行权限
+        run: |
+          chmod +x $GITHUB_WORKSPACE/scripts/*.sh
 
       - name: 克隆源代码
         run: |
