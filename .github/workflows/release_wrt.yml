@@ -35,7 +35,7 @@ jobs:
   # 准备阶段：生成编译矩阵
   prepare:
     name: 准备编译矩阵
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       matrix-ultra: ${{ steps.set-matrix.outputs.matrix-ultra }}
       matrix-others: ${{ steps.set-matrix.outputs.matrix-others }}
@@ -47,19 +47,19 @@ jobs:
         id: set-matrix
         run: |
           # 构建Ultra配置的矩阵
-          MATRIX_ULTRA='{\"include\":['
-          MATRIX_ULTRA+='{\"branch_name\":\"immwrt\",\"branch_url\":\"https://github.com/VIKINGYFY/immortalwrt.git\",\"branch_ref\":\"main\",\"branch_config\":\"configs/immwrt_base.config\",\"pkg_name\":\"Ultra\",\"pkg_config\":\"configs/Ultra.config\"},'
-          MATRIX_ULTRA+='{\"branch_name\":\"libwrt\",\"branch_url\":\"https://github.com/LiBwrt/openwrt-6.x.git\",\"branch_ref\":\"k6.12-nss\",\"branch_config\":\"configs/libwrt_base.config\",\"pkg_name\":\"Ultra\",\"pkg_config\":\"configs/Ultra.config\"}'
+          MATRIX_ULTRA='{"include":['
+          MATRIX_ULTRA+='{"branch_name":"immwrt","branch_url":"https://github.com/VIKINGYFY/immortalwrt.git","branch_ref":"main","branch_config":"configs/immwrt_base.config","pkg_name":"Ultra","pkg_config":"configs/Ultra.config"},'
+          MATRIX_ULTRA+='{"branch_name":"libwrt","branch_url":"https://github.com/LiBwrt/openwrt-6.x.git","branch_ref":"k6.12-nss","branch_config":"configs/libwrt_base.config","pkg_name":"Ultra","pkg_config":"configs/Ultra.config"}'
           MATRIX_ULTRA+=']}'
           
           # 构建其他配置的矩阵
-          MATRIX_OTHERS='{\"include\":['
+          MATRIX_OTHERS='{"include":['
           # 添加Max配置
-          MATRIX_OTHERS+='{\"branch_name\":\"immwrt\",\"branch_url\":\"https://github.com/VIKINGYFY/immortalwrt.git\",\"branch_ref\":\"main\",\"branch_config\":\"configs/immwrt_base.config\",\"pkg_name\":\"Max\",\"pkg_config\":\"configs/Max.config\"},'
-          MATRIX_OTHERS+='{\"branch_name\":\"libwrt\",\"branch_url\":\"https://github.com/LiBwrt/openwrt-6.x.git\",\"branch_ref\":\"k6.12-nss\",\"branch_config\":\"configs/libwrt_base.config\",\"pkg_name\":\"Max\",\"pkg_config\":\"configs/Max.config\"},'
+          MATRIX_OTHERS+='{"branch_name":"immwrt","branch_url":"https://github.com/VIKINGYFY/immortalwrt.git","branch_ref":"main","branch_config":"configs/immwrt_base.config","pkg_name":"Max","pkg_config":"configs/Max.config"},'
+          MATRIX_OTHERS+='{"branch_name":"libwrt","branch_url":"https://github.com/LiBwrt/openwrt-6.x.git","branch_ref":"k6.12-nss","branch_config":"configs/libwrt_base.config","pkg_name":"Max","pkg_config":"configs/Max.config"},'
           # 添加Pro配置
-          MATRIX_OTHERS+='{\"branch_name\":\"immwrt\",\"branch_url\":\"https://github.com/VIKINGYFY/immortalwrt.git\",\"branch_ref\":\"main\",\"branch_config\":\"configs/immwrt_base.config\",\"pkg_name\":\"Pro\",\"pkg_config\":\"configs/Pro.config\"},'
-          MATRIX_OTHERS+='{\"branch_name\":\"libwrt\",\"branch_url\":\"https://github.com/LiBwrt/openwrt-6.x.git\",\"branch_ref\":\"k6.12-nss\",\"branch_config\":\"configs/libwrt_base.config\",\"pkg_name\":\"Pro\",\"pkg_config\":\"configs/Pro.config\"}'
+          MATRIX_OTHERS+='{"branch_name":"immwrt","branch_url":"https://github.com/VIKINGYFY/immortalwrt.git","branch_ref":"main","branch_config":"configs/immwrt_base.config","pkg_name":"Pro","pkg_config":"configs/Pro.config"},'
+          MATRIX_OTHERS+='{"branch_name":"libwrt","branch_url":"https://github.com/LiBwrt/openwrt-6.x.git","branch_ref":"k6.12-nss","branch_config":"configs/libwrt_base.config","pkg_name":"Pro","pkg_config":"configs/Pro.config"}'
           MATRIX_OTHERS+=']}'
           
           echo "matrix-ultra=$MATRIX_ULTRA" >> $GITHUB_OUTPUT
@@ -73,7 +73,7 @@ jobs:
   build-ultra:
     name: 编译 ${{ matrix.branch_name }}-${{ matrix.pkg_name }}
     needs: prepare
-    runs-on: ${{ github.event.inputs.os_version || 'ubuntu-22.04' }}
+    runs-on: ${{ github.event.inputs.os_version || 'ubuntu-24.04' }}
     strategy:
       matrix: ${{ fromJson(needs.prepare.outputs.matrix-ultra) }}
       max-parallel: 3
@@ -390,7 +390,7 @@ jobs:
   build-others:
     name: 编译 ${{ matrix.branch_name }}-${{ matrix.pkg_name }}
     needs: [prepare, build-ultra]
-    runs-on: ${{ github.event.inputs.os_version || 'ubuntu-22.04' }}
+    runs-on: ${{ github.event.inputs.os_version || 'ubuntu-24.04' }}
     strategy:
       matrix: ${{ fromJson(needs.prepare.outputs.matrix-others) }}
       max-parallel: 3
@@ -707,7 +707,7 @@ jobs:
   release:
     name: 发布固件
     needs: [build-ultra, build-others]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: always()
     
     steps:
