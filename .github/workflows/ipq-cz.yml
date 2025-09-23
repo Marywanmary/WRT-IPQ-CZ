@@ -190,7 +190,9 @@ jobs:
             file wget ccache python3 python3-pip jq ncurses-dev \
             subversion gawk libncursesw5-dev gettext libz-dev \
             libssl-dev xsltproc zip unzip g++-multilib python3-pyelftools \
-            time wget rsync
+            time wget rsync libexpat1-dev libbz2-dev libgmp3-dev \
+            libmpfr-dev libmpc-dev libisl-dev libcloog-isl-dev \
+            libtool autoconf automake cmake pkg-config
           pip3 install pyelftools
           
           # 克隆OpenWrt源码
@@ -231,7 +233,28 @@ jobs:
               tail -n 50 build.log
               # 检查工具链编译错误
               echo "检查工具链编译错误:"
-              find build_dir -name "*.log" -path "*/tools/*" -exec echo "=== {} ===" \; -exec tail -n 20 {} \;
+              if [ -d "build_dir" ]; then
+                echo "=== 检查工具链编译状态 ==="
+                if [ -f "staging_dir/host/stamp/.tools_compile"* ]; then
+                  echo "工具链编译状态文件:"
+                  ls -la staging_dir/host/stamp/.tools_compile*
+                  # 检查哪些工具编译失败
+                  echo "检查编译失败的工具:"
+                  for stamp_file in staging_dir/host/stamp/.tools_compile*; do
+                    if [ -f "$stamp_file" ]; then
+                      stamp_name=$(basename "$stamp_file")
+                      tools_status=${stamp_name#.tools_compile_}
+                      echo "工具状态: $tools_status"
+                      # 获取工具列表
+                      make -s tools/show-info 2>/dev/null | head -20
+                    fi
+                  done
+                fi
+                echo "=== 检查工具编译日志 ==="
+                find build_dir -name "*.log" -path "*/tools/*" -exec echo "=== {} ===" \; -exec tail -n 20 {} \;
+                echo "=== 检查编译失败的工具 ==="
+                find build_dir -name ".built" -path "*/tools/*" -exec sh -c 'if [ ! -f {} ]; then echo "工具编译失败: $(dirname {})"; fi' \;
+              fi
               exit 1
             }
           done
@@ -267,6 +290,12 @@ jobs:
           if [ -d "openwrt/build_dir" ]; then
             mkdir -p $GITHUB_WORKSPACE/artifacts/toolchain_logs
             find openwrt/build_dir -name "*.log" -path "*/tools/*" -exec cp {} $GITHUB_WORKSPACE/artifacts/toolchain_logs/ \;
+          fi
+          
+          # 收集工具链状态文件
+          if [ -d "openwrt/staging_dir/host/stamp" ]; then
+            mkdir -p $GITHUB_WORKSPACE/artifacts/toolchain_status
+            cp openwrt/staging_dir/host/stamp/.tools_compile* $GITHUB_WORKSPACE/artifacts/toolchain_status/ 2>/dev/null || true
           fi
 
       - name: 上传编译产物
@@ -362,6 +391,10 @@ jobs:
               mkdir -p "release/logs/${branch_short}-toolchain_logs"
               cp -r "$branch_dir/toolchain_logs/"* "release/logs/${branch_short}-toolchain_logs/"
             fi
+            if [ -d "$branch_dir/toolchain_status" ]; then
+              mkdir -p "release/logs/${branch_short}-toolchain_status"
+              cp -r "$branch_dir/toolchain_status/"* "release/logs/${branch_short}-toolchain_status/"
+            fi
           done
           
           # 打包日志文件
@@ -437,7 +470,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.prepare.outputs.date-tag }}
-          name: OpenWrt固件发布 - $github.event.inputs.arch || 'ipq60xx' }}"
+          name: OpenWrt固件发布 - ${{ needs.prepare.outputs.date-tag }}
           body_path: release/NOTES.md
           files: |
             release/*.bin
