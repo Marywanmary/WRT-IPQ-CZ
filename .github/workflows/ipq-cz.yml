@@ -191,8 +191,8 @@ jobs:
             subversion gawk libncursesw5-dev gettext libz-dev \
             libssl-dev xsltproc zip unzip g++-multilib python3-pyelftools \
             time wget rsync libexpat1-dev libbz2-dev libgmp3-dev \
-            libmpfr-dev libmpc-dev libisl-dev libcloog-isl-dev \
-            libtool autoconf automake cmake pkg-config
+            libmpfr-dev libmpc-dev libisl-dev libtool autoconf \
+            automake cmake pkg-config
           pip3 install pyelftools
           
           # 克隆OpenWrt源码
