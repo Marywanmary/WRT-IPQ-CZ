@@ -1,0 +1,784 @@
+name: WRT Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      os_version:
+        description: '选择操作系统版本'
+        required: true
+        default: 'ubuntu-24.04'
+        type: choice
+        options:
+          - ubuntu-22.04
+          - ubuntu-24.04
+      start_stage:
+        description: '选择开始编译的阶段'
+        required: true
+        default: 'full'  # 默认为完整编译
+        type: choice
+        options:
+          - full           # 完整编译（从工具链开始）
+          - toolchain      # 工具链编译
+          - packages       # 依赖包编译
+          - kernel         # 内核编译
+          - base           # 基础系统编译
+          - ipk            # 软件包编译（包括IPK/APK）
+  schedule:
+    - cron: '0 16 * * 4'  # 北京时间周五0点（UTC时间是周四16点）
+
+env:
+  TZ: Asia/Shanghai  # 设置时区为亚洲/上海
+  CHIP_TYPE: ipq60xx
+  CHIP_BASE_FILE: configs/ipq60xx_base.config
+
+jobs:
+  # 准备阶段：生成编译矩阵
+  prepare:
+    name: 准备编译矩阵
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix-ultra: ${{ steps.set-matrix.outputs.matrix-ultra }}
+      matrix-others: ${{ steps.set-matrix.outputs.matrix-others }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@main
+        
+      - name: 生成编译矩阵
+        id: set-matrix
+        run: |
+          # 构建Ultra配置的矩阵
+          MATRIX_ULTRA='{\"include\":['
+          MATRIX_ULTRA+='{\"branch_name\":\"immwrt\",\"branch_url\":\"https://github.com/VIKINGYFY/immortalwrt.git\",\"branch_ref\":\"main\",\"branch_config\":\"configs/immwrt_base.config\",\"pkg_name\":\"Ultra\",\"pkg_config\":\"configs/Ultra.config\"},'
+          MATRIX_ULTRA+='{\"branch_name\":\"libwrt\",\"branch_url\":\"https://github.com/LiBwrt/openwrt-6.x.git\",\"branch_ref\":\"k6.12-nss\",\"branch_config\":\"configs/libwrt_base.config\",\"pkg_name\":\"Ultra\",\"pkg_config\":\"configs/Ultra.config\"}'
+          MATRIX_ULTRA+=']}'
+          
+          # 构建其他配置的矩阵
+          MATRIX_OTHERS='{\"include\":['
+          # 添加Max配置
+          MATRIX_OTHERS+='{\"branch_name\":\"immwrt\",\"branch_url\":\"https://github.com/VIKINGYFY/immortalwrt.git\",\"branch_ref\":\"main\",\"branch_config\":\"configs/immwrt_base.config\",\"pkg_name\":\"Max\",\"pkg_config\":\"configs/Max.config\"},'
+          MATRIX_OTHERS+='{\"branch_name\":\"libwrt\",\"branch_url\":\"https://github.com/LiBwrt/openwrt-6.x.git\",\"branch_ref\":\"k6.12-nss\",\"branch_config\":\"configs/libwrt_base.config\",\"pkg_name\":\"Max\",\"pkg_config\":\"configs/Max.config\"},'
+          # 添加Pro配置
+          MATRIX_OTHERS+='{\"branch_name\":\"immwrt\",\"branch_url\":\"https://github.com/VIKINGYFY/immortalwrt.git\",\"branch_ref\":\"main\",\"branch_config\":\"configs/immwrt_base.config\",\"pkg_name\":\"Pro\",\"pkg_config\":\"configs/Pro.config\"},'
+          MATRIX_OTHERS+='{\"branch_name\":\"libwrt\",\"branch_url\":\"https://github.com/LiBwrt/openwrt-6.x.git\",\"branch_ref\":\"k6.12-nss\",\"branch_config\":\"configs/libwrt_base.config\",\"pkg_name\":\"Pro\",\"pkg_config\":\"configs/Pro.config\"}'
+          MATRIX_OTHERS+=']}'
+          
+          echo "matrix-ultra=$MATRIX_ULTRA" >> $GITHUB_OUTPUT
+          echo "matrix-others=$MATRIX_OTHERS" >> $GITHUB_OUTPUT
+          echo "生成的Ultra配置矩阵："
+          echo "$MATRIX_ULTRA" | jq .
+          echo "生成的其他配置矩阵："
+          echo "$MATRIX_OTHERS" | jq .
+
+  # 编译阶段1：编译所有分支的Ultra配置
+  build-ultra:
+    name: 编译 ${{ matrix.branch_name }}-${{ matrix.pkg_name }}
+    needs: prepare
+    runs-on: ${{ github.event.inputs.os_version || 'ubuntu-22.04' }}
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix-ultra) }}
+      max-parallel: 3
+      fail-fast: false
+    
+    steps:
+      - name: 清理磁盘空间
+        uses: sbwml/actions@free-disk
+
+      - name: 检查服务器性能
+        run: |
+          echo "警告⚠"
+          echo "分配的服务器性能有限，若选择的插件过多，务必注意CPU性能！"
+          echo -e "已知CPU型号（降序）：7763，8370C，8272CL，8171M，E5-2673 \\n"
+          echo "--------------------------CPU信息--------------------------"
+          echo "CPU物理数量：$(cat /proc/cpuinfo | grep "physical id" | sort | uniq | wc -l)"
+          echo -e "CPU核心信息：$(cat /proc/cpuinfo | grep name | cut -f2 -d: | uniq -c) \\n"
+          echo "--------------------------内存信息--------------------------"
+          echo "已安装内存详细信息："
+          echo -e "$(sudo lshw -short -C memory | grep GiB) \\n"
+          echo "--------------------------硬盘信息--------------------------"
+          echo "硬盘数量：$(ls /dev/sd* | grep -v [1-9] | wc -l)" && df -hT
+
+      - name: 初始化环境
+        run: |
+          sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+          sudo -E apt -yqq install dos2unix
+          sudo -E apt -yqq install libfuse-dev
+          sudo -E apt -yqq autoremove --purge
+          sudo -E apt -yqq autoclean
+          sudo -E apt -yqq clean
+          sudo -E systemctl daemon-reload
+          sudo -E timedatectl set-timezone "$TZ"
+
+      - name: 检出代码
+        uses: actions/checkout@main
+
+      - name: 克隆源代码
+        run: |
+          # 显示工作空间磁盘使用情况
+          df -hT $GITHUB_WORKSPACE
+          # 创建源代码目录并设置权限
+          sudo mkdir -p /mnt/${{ matrix.branch_name }}
+          sudo chown -R $(id -u):$(id -g) /mnt/${{ matrix.branch_name }}
+          # 克隆源代码
+          git clone --depth 1 -b ${{ matrix.branch_ref }} --single-branch ${{ matrix.branch_url }} /mnt/${{ matrix.branch_name }}
+          cd /mnt/${{ matrix.branch_name }}
+          # 设置环境变量
+          echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
+          VERSION_INFO=$(git show -s --date=short --format="作者: %an<br/>时间: %cd<br/>内容: %s<br/>hash: %H")
+          echo "VERSION_INFO=$VERSION_INFO" >> $GITHUB_ENV
+          VERSION_KERNEL=$(find ./dl -maxdepth 1 -name "linux-[4-6]\.*" | sort -r | head -n 1 | grep -oE "[4-6]\.[0-9]{1,3}\.[0-9]{1,3}")
+          echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
+          
+          # GitHub Action 移除国内下载源
+          PROJECT_MIRRORS_FILE="$PWD/scripts/projectsmirrors.json"
+          if [ -f "$PROJECT_MIRRORS_FILE" ]; then
+            sed -i '/.cn\//d; /tencent/d; /aliyun/d' "$PROJECT_MIRRORS_FILE"
+          fi
+
+      - name: 更新源代码和配置
+        run: |
+          cd $OPENWRT_PATH
+          # 调用update.sh脚本
+          $GITHUB_WORKSPACE/update.sh "${{ matrix.branch_url }}" "${{ matrix.branch_ref }}" "$OPENWRT_PATH" "none"
+          
+          # 合并配置文件：芯片基础配置 + 分支基础配置 + 软件包配置
+          cat $GITHUB_WORKSPACE/${{ env.CHIP_BASE_FILE }} $GITHUB_WORKSPACE/${{ matrix.branch_config }} $GITHUB_WORKSPACE/${{ matrix.pkg_config }} > $OPENWRT_PATH/.config
+          
+          # 生成.defconfig文件
+          make defconfig > /dev/null 2>&1
+          
+          # 设置环境变量
+          SOURCE_REPO=${{ matrix.branch_name }}
+          echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
+          DEVICE_TARGET=$(cat .config | grep CONFIG_TARGET_BOARD | awk -F '\"' '{print $2}')
+          echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
+          echo "HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
+          echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
+          # 生成共享缓存key，不包含配置名称，以便不同配置间共享
+          echo "SHARED_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}-${{ env.HASH }}" >> $GITHUB_ENV
+
+      - name: 恢复工具链缓存
+        if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-toolchain
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-toolchain-
+          path: |
+            ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
+        continue-on-error: true
+
+      - name: 检查工具链缓存
+        if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
+        run: |
+          if [ ! -d "$OPENWRT_PATH/staging_dir/toolchain-arm_cortex-a53+neon-vfpv4_gcc-13.3.0_musl_eabi" ]; then
+            echo "错误：工具链缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
+            exit 1
+          fi
+
+      - name: 编译工具链
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译工具链..."
+          make toolchain/install -j$(($(nproc) + 1)) || make toolchain/install -j1 V=s
+          echo "工具链编译完成"
+
+      - name: 缓存工具链
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-toolchain ${{ env.CACHE_DATE }}
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-toolchain-
+          path: |
+            ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
+
+      - name: 恢复依赖包缓存
+        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-packages
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-packages-
+          path: |
+            ${{ env.OPENWRT_PATH }}/staging_dir/target*
+            ${{ env.OPENWRT_PATH }}/staging_dir/host*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
+        continue-on-error: true
+
+      - name: 检查依赖包缓存
+        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        run: |
+          if [ ! -d "$OPENWRT_PATH/staging_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi" ]; then
+            echo "错误：依赖包缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
+            exit 1
+          fi
+
+      - name: 编译依赖包
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译依赖包..."
+          make download -j$(($(nproc) * 2))
+          make package/compile -j$(($(nproc) + 1)) || make package/compile -j1 V=s
+          echo "依赖包编译完成"
+
+      - name: 缓存依赖包
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-packages ${{ env.CACHE_DATE }}
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-packages-
+          path: |
+            ${{ env.OPENWRT_PATH }}/staging_dir/target*
+            ${{ env.OPENWRT_PATH }}/staging_dir/host*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
+
+      - name: 恢复内核缓存
+        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-kernel
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-kernel-
+          path: |
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
+        continue-on-error: true
+
+      - name: 检查内核缓存
+        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        run: |
+          if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-"* ]; then
+            echo "错误：内核缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
+            exit 1
+          fi
+
+      - name: 编译内核
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译内核..."
+          make target/linux/compile -j$(($(nproc) + 1)) || make target/linux/compile -j1 V=s
+          echo "内核编译完成"
+
+      - name: 缓存内核
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-kernel ${{ env.CACHE_DATE }}
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-kernel-
+          path: |
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
+
+      - name: 恢复基础系统缓存
+        if: github.event.inputs.start_stage == 'ipk'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-base
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-base-
+          path: |
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
+        continue-on-error: true
+
+      - name: 检查基础系统缓存
+        if: github.event.inputs.start_stage == 'ipk'
+        run: |
+          if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-"* ]; then
+            echo "错误：基础系统缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
+            exit 1
+          fi
+
+      - name: 编译基础系统
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译基础系统..."
+          make target/linux/install -j$(($(nproc) + 1)) || make target/linux/install -j1 V=s
+          make package/install -j$(($(nproc) + 1)) || make package/install -j1 V=s
+          echo "基础系统编译完成"
+
+      - name: 缓存基础系统
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-base ${{ env.CACHE_DATE }}
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-base-
+          path: |
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
+
+      - name: 编译软件包并生成固件
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk' || github.event.inputs.start_stage == 'full'
+        id: compile
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译软件包并生成固件..."
+          make package/compile -j$(($(nproc) + 1)) || make package/compile -j1 V=s
+          make package/install -j$(($(nproc) + 1)) || make package/install -j1 V=s
+          make image -j$(($(nproc) + 1)) || make image -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
+          echo "FILE_DATE=$(date +"%Y.%m.%d")" >> $GITHUB_ENV
+
+      - name: 检查空间使用情况
+        if: (!cancelled())
+        run: df -hT
+
+      - name: 整理文件
+        if: steps.compile.outputs.status == 'success'
+        run: |
+          # 创建临时目录
+          mkdir -p $GITHUB_WORKSPACE/artifacts
+          
+          # 进入固件目录
+          cd $OPENWRT_PATH/bin/targets/*/*
+          
+          # 复制并重命名配置文件
+          cp $OPENWRT_PATH/.config $GITHUB_WORKSPACE/artifacts/${{ matrix.branch_name }}-${{ env.CHIP_TYPE }}-${{ matrix.pkg_name }}.config
+          mv config.buildinfo $GITHUB_WORKSPACE/artifacts/${{ matrix.branch_name }}-${{ env.CHIP_TYPE }}-${{ matrix.pkg_name }}.config.buildinfo
+          mv *.manifest $GITHUB_WORKSPACE/artifacts/${{ matrix.branch_name }}-${{ env.CHIP_TYPE }}-${{ matrix.pkg_name }}.manifest
+          
+          # 重命名固件文件
+          for file in *.bin; do
+            if [[ $file == *"factory"* ]]; then
+              new_file="${{ matrix.branch_name }}-${{ env.CHIP_TYPE }}-$(echo $file | sed -n 's/.*-\(jdcloud_.*\)-squashfs-factory.bin/\1/p')-factory-${{ matrix.pkg_name }}.bin"
+            elif [[ $file == *"sysupgrade"* ]]; then
+              new_file="${{ matrix.branch_name }}-${{ env.CHIP_TYPE }}-$(echo $file | sed -n 's/.*-\(jdcloud_.*\)-squashfs-sysupgrade.bin/\1/p')-sysupgrade-${{ matrix.pkg_name }}.bin"
+            else
+              new_file="${{ matrix.branch_name }}-${{ env.CHIP_TYPE }}-$(echo $file | sed -n 's/.*-\(jdcloud_.*\)\.bin/\1/p')-${{ matrix.pkg_name }}.bin"
+            fi
+            mv "$file" "$GITHUB_WORKSPACE/artifacts/$new_file"
+          done
+          
+          # 复制软件包
+          mkdir -p $GITHUB_WORKSPACE/artifacts/packages
+          mv -f $OPENWRT_PATH/bin/packages/*/*/*.apk $GITHUB_WORKSPACE/artifacts/packages/ 2>/dev/null || true
+          mv -f $OPENWRT_PATH/bin/packages/*/*/*.ipk $GITHUB_WORKSPACE/artifacts/packages/ 2>/dev/null || true
+          
+          # 复制编译日志
+          mkdir -p $GITHUB_WORKSPACE/artifacts/logs
+          cp $OPENWRT_PATH/logs/* $GITHUB_WORKSPACE/artifacts/logs/ 2>/dev/null || true
+          
+          echo "ARTIFACTS_PATH=$GITHUB_WORKSPACE/artifacts" >> $GITHUB_ENV
+
+      - name: 上传构建产物
+        if: steps.compile.outputs.status == 'success'
+        uses: actions/upload-artifact@main
+        with:
+          name: ${{ matrix.branch_name }}-${{ matrix.pkg_name }}-${{ env.FILE_DATE }}
+          path: ${{ env.ARTIFACTS_PATH }}
+          retention-days: 7
+
+      - name: 删除旧缓存
+        if: always()
+        run: |
+          # 获取缓存列表并删除
+          gh cache list --key ${{ env.SHARED_CACHE_KEY }}- --json key --jq '.[] | .key' | while read -r key; do
+            gh cache delete "$key"
+          done
+          # 输出缓存状态
+          echo "========cache status========"
+          echo "ccache: $(du -sh $OPENWRT_PATH/.ccache | cut -f 1)"
+          echo "staging: $(du -sh $OPENWRT_PATH/staging_dir | cut -f 1)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 编译阶段2：编译所有分支的其他配置（Max和Pro）
+  build-others:
+    name: 编译 ${{ matrix.branch_name }}-${{ matrix.pkg_name }}
+    needs: [prepare, build-ultra]
+    runs-on: ${{ github.event.inputs.os_version || 'ubuntu-22.04' }}
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix-others) }}
+      max-parallel: 3
+      fail-fast: false
+    
+    steps:
+      - name: 清理磁盘空间
+        uses: sbwml/actions@free-disk
+
+      - name: 检查服务器性能
+        run: |
+          echo "警告⚠"
+          echo "分配的服务器性能有限，若选择的插件过多，务必注意CPU性能！"
+          echo -e "已知CPU型号（降序）：7763，8370C，8272CL，8171M，E5-2673 \\n"
+          echo "--------------------------CPU信息--------------------------"
+          echo "CPU物理数量：$(cat /proc/cpuinfo | grep "physical id" | sort | uniq | wc -l)"
+          echo -e "CPU核心信息：$(cat /proc/cpuinfo | grep name | cut -f2 -d: | uniq -c) \\n"
+          echo "--------------------------内存信息--------------------------"
+          echo "已安装内存详细信息："
+          echo -e "$(sudo lshw -short -C memory | grep GiB) \\n"
+          echo "--------------------------硬盘信息--------------------------"
+          echo "硬盘数量：$(ls /dev/sd* | grep -v [1-9] | wc -l)" && df -hT
+
+      - name: 初始化环境
+        run: |
+          sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+          sudo -E apt -yqq install dos2unix
+          sudo -E apt -yqq install libfuse-dev
+          sudo -E apt -yqq autoremove --purge
+          sudo -E apt -yqq autoclean
+          sudo -E apt -yqq clean
+          sudo -E systemctl daemon-reload
+          sudo -E timedatectl set-timezone "$TZ"
+
+      - name: 检出代码
+        uses: actions/checkout@main
+
+      - name: 克隆源代码
+        run: |
+          # 显示工作空间磁盘使用情况
+          df -hT $GITHUB_WORKSPACE
+          # 创建源代码目录并设置权限
+          sudo mkdir -p /mnt/${{ matrix.branch_name }}
+          sudo chown -R $(id -u):$(id -g) /mnt/${{ matrix.branch_name }}
+          # 克隆源代码
+          git clone --depth 1 -b ${{ matrix.branch_ref }} --single-branch ${{ matrix.branch_url }} /mnt/${{ matrix.branch_name }}
+          cd /mnt/${{ matrix.branch_name }}
+          # 设置环境变量
+          echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
+          VERSION_INFO=$(git show -s --date=short --format="作者: %an<br/>时间: %cd<br/>内容: %s<br/>hash: %H")
+          echo "VERSION_INFO=$VERSION_INFO" >> $GITHUB_ENV
+          VERSION_KERNEL=$(find ./dl -maxdepth 1 -name "linux-[4-6]\.*" | sort -r | head -n 1 | grep -oE "[4-6]\.[0-9]{1,3}\.[0-9]{1,3}")
+          echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
+          
+          # GitHub Action 移除国内下载源
+          PROJECT_MIRRORS_FILE="$PWD/scripts/projectsmirrors.json"
+          if [ -f "$PROJECT_MIRRORS_FILE" ]; then
+            sed -i '/.cn\//d; /tencent/d; /aliyun/d' "$PROJECT_MIRRORS_FILE"
+          fi
+
+      - name: 更新源代码和配置
+        run: |
+          cd $OPENWRT_PATH
+          # 调用update.sh脚本
+          $GITHUB_WORKSPACE/update.sh "${{ matrix.branch_url }}" "${{ matrix.branch_ref }}" "$OPENWRT_PATH" "none"
+          
+          # 合并配置文件：芯片基础配置 + 分支基础配置 + 软件包配置
+          cat $GITHUB_WORKSPACE/${{ env.CHIP_BASE_FILE }} $GITHUB_WORKSPACE/${{ matrix.branch_config }} $GITHUB_WORKSPACE/${{ matrix.pkg_config }} > $OPENWRT_PATH/.config
+          
+          # 生成.defconfig文件
+          make defconfig > /dev/null 2>&1
+          
+          # 设置环境变量
+          SOURCE_REPO=${{ matrix.branch_name }}
+          echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
+          DEVICE_TARGET=$(cat .config | grep CONFIG_TARGET_BOARD | awk -F '\"' '{print $2}')
+          echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
+          echo "HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
+          echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
+          # 生成共享缓存key，不包含配置名称，以便不同配置间共享
+          echo "SHARED_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}-${{ env.HASH }}" >> $GITHUB_ENV
+
+      - name: 恢复工具链缓存
+        if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-toolchain
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-toolchain-
+          path: |
+            ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
+        continue-on-error: true
+
+      - name: 检查工具链缓存
+        if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
+        run: |
+          if [ ! -d "$OPENWRT_PATH/staging_dir/toolchain-arm_cortex-a53+neon-vfpv4_gcc-13.3.0_musl_eabi" ]; then
+            echo "错误：工具链缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
+            exit 1
+          fi
+
+      - name: 编译工具链
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译工具链..."
+          make toolchain/install -j$(($(nproc) + 1)) || make toolchain/install -j1 V=s
+          echo "工具链编译完成"
+
+      - name: 缓存工具链
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-toolchain ${{ env.CACHE_DATE }}
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-toolchain-
+          path: |
+            ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
+
+      - name: 恢复依赖包缓存
+        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-packages
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-packages-
+          path: |
+            ${{ env.OPENWRT_PATH }}/staging_dir/target*
+            ${{ env.OPENWRT_PATH }}/staging_dir/host*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
+        continue-on-error: true
+
+      - name: 检查依赖包缓存
+        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        run: |
+          if [ ! -d "$OPENWRT_PATH/staging_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi" ]; then
+            echo "错误：依赖包缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
+            exit 1
+          fi
+
+      - name: 编译依赖包
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译依赖包..."
+          make download -j$(($(nproc) * 2))
+          make package/compile -j$(($(nproc) + 1)) || make package/compile -j1 V=s
+          echo "依赖包编译完成"
+
+      - name: 缓存依赖包
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-packages ${{ env.CACHE_DATE }}
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-packages-
+          path: |
+            ${{ env.OPENWRT_PATH }}/staging_dir/target*
+            ${{ env.OPENWRT_PATH }}/staging_dir/host*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
+
+      - name: 恢复内核缓存
+        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-kernel
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-kernel-
+          path: |
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
+        continue-on-error: true
+
+      - name: 检查内核缓存
+        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        run: |
+          if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-"* ]; then
+            echo "错误：内核缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
+            exit 1
+          fi
+
+      - name: 编译内核
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译内核..."
+          make target/linux/compile -j$(($(nproc) + 1)) || make target/linux/compile -j1 V=s
+          echo "内核编译完成"
+
+      - name: 缓存内核
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-kernel ${{ env.CACHE_DATE }}
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-kernel-
+          path: |
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
+
+      - name: 恢复基础系统缓存
+        if: github.event.inputs.start_stage == 'ipk'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-base
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-base-
+          path: |
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
+        continue-on-error: true
+
+      - name: 检查基础系统缓存
+        if: github.event.inputs.start_stage == 'ipk'
+        run: |
+          if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-"* ]; then
+            echo "错误：基础系统缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
+            exit 1
+          fi
+
+      - name: 编译基础系统
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译基础系统..."
+          make target/linux/install -j$(($(nproc) + 1)) || make target/linux/install -j1 V=s
+          make package/install -j$(($(nproc) + 1)) || make package/install -j1 V=s
+          echo "基础系统编译完成"
+
+      - name: 缓存基础系统
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-base ${{ env.CACHE_DATE }}
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-base-
+          path: |
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
+
+      - name: 编译软件包并生成固件
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk' || github.event.inputs.start_stage == 'full'
+        id: compile
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译软件包并生成固件..."
+          make package/compile -j$(($(nproc) + 1)) || make package/compile -j1 V=s
+          make package/install -j$(($(nproc) + 1)) || make package/install -j1 V=s
+          make image -j$(($(nproc) + 1)) || make image -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
+          echo "FILE_DATE=$(date +"%Y.%m.%d")" >> $GITHUB_ENV
+
+      - name: 检查空间使用情况
+        if: (!cancelled())
+        run: df -hT
+
+      - name: 整理文件
+        if: steps.compile.outputs.status == 'success'
+        run: |
+          # 创建临时目录
+          mkdir -p $GITHUB_WORKSPACE/artifacts
+          
+          # 进入固件目录
+          cd $OPENWRT_PATH/bin/targets/*/*
+          
+          # 复制并重命名配置文件
+          cp $OPENWRT_PATH/.config $GITHUB_WORKSPACE/artifacts/${{ matrix.branch_name }}-${{ env.CHIP_TYPE }}-${{ matrix.pkg_name }}.config
+          mv config.buildinfo $GITHUB_WORKSPACE/artifacts/${{ matrix.branch_name }}-${{ env.CHIP_TYPE }}-${{ matrix.pkg_name }}.config.buildinfo
+          mv *.manifest $GITHUB_WORKSPACE/artifacts/${{ matrix.branch_name }}-${{ env.CHIP_TYPE }}-${{ matrix.pkg_name }}.manifest
+          
+          # 重命名固件文件
+          for file in *.bin; do
+            if [[ $file == *"factory"* ]]; then
+              new_file="${{ matrix.branch_name }}-${{ env.CHIP_TYPE }}-$(echo $file | sed -n 's/.*-\(jdcloud_.*\)-squashfs-factory.bin/\1/p')-factory-${{ matrix.pkg_name }}.bin"
+            elif [[ $file == *"sysupgrade"* ]]; then
+              new_file="${{ matrix.branch_name }}-${{ env.CHIP_TYPE }}-$(echo $file | sed -n 's/.*-\(jdcloud_.*\)-squashfs-sysupgrade.bin/\1/p')-sysupgrade-${{ matrix.pkg_name }}.bin"
+            else
+              new_file="${{ matrix.branch_name }}-${{ env.CHIP_TYPE }}-$(echo $file | sed -n 's/.*-\(jdcloud_.*\)\.bin/\1/p')-${{ matrix.pkg_name }}.bin"
+            fi
+            mv "$file" "$GITHUB_WORKSPACE/artifacts/$new_file"
+          done
+          
+          # 复制软件包
+          mkdir -p $GITHUB_WORKSPACE/artifacts/packages
+          mv -f $OPENWRT_PATH/bin/packages/*/*/*.apk $GITHUB_WORKSPACE/artifacts/packages/ 2>/dev/null || true
+          mv -f $OPENWRT_PATH/bin/packages/*/*/*.ipk $GITHUB_WORKSPACE/artifacts/packages/ 2>/dev/null || true
+          
+          # 复制编译日志
+          mkdir -p $GITHUB_WORKSPACE/artifacts/logs
+          cp $OPENWRT_PATH/logs/* $GITHUB_WORKSPACE/artifacts/logs/ 2>/dev/null || true
+          
+          echo "ARTIFACTS_PATH=$GITHUB_WORKSPACE/artifacts" >> $GITHUB_ENV
+
+      - name: 上传构建产物
+        if: steps.compile.outputs.status == 'success'
+        uses: actions/upload-artifact@main
+        with:
+          name: ${{ matrix.branch_name }}-${{ matrix.pkg_name }}-${{ env.FILE_DATE }}
+          path: ${{ env.ARTIFACTS_PATH }}
+          retention-days: 7
+
+      - name: 删除旧缓存
+        if: always()
+        run: |
+          # 获取缓存列表并删除
+          gh cache list --key ${{ env.SHARED_CACHE_KEY }}- --json key --jq '.[] | .key' | while read -r key; do
+            gh cache delete "$key"
+          done
+          # 输出缓存状态
+          echo "========cache status========"
+          echo "ccache: $(du -sh $OPENWRT_PATH/.ccache | cut -f 1)"
+          echo "staging: $(du -sh $OPENWRT_PATH/staging_dir | cut -f 1)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 发布阶段：整理所有构建产物并发布到Release
+  release:
+    name: 发布固件
+    needs: [build-ultra, build-others]
+    runs-on: ubuntu-22.04
+    if: always()
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@main
+        
+      - name: 下载所有构建产物
+        uses: actions/download-artifact@main
+        with:
+          path: ${{ github.workspace }}/artifacts
+          
+      - name: 检查构建产物
+        id: check-artifacts
+        run: |
+          # 检查artifacts目录是否存在
+          if [ -d "${{ github.workspace }}/artifacts" ]; then
+            echo "artifacts-exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "artifacts-exists=false" >> $GITHUB_OUTPUT
+            echo "警告：没有找到构建产物，跳过发布步骤"
+          fi
+          
+      - name: 整理发布文件
+        if: steps.check-artifacts.outputs.artifacts-exists == 'true'
+        run: |
+          # 创建最终发布目录
+          mkdir -p ${{ github.workspace }}/release
+          
+          # 整理配置文件
+          mkdir -p ${{ github.workspace }}/release/configs
+          find ${{ github.workspace }}/artifacts -name "*.config" -exec cp {} ${{ github.workspace }}/release/configs/ \;
+          find ${{ github.workspace }}/artifacts -name "*.config.buildinfo" -exec cp {} ${{ github.workspace }}/release/configs/ \;
+          find ${{ github.workspace }}/artifacts -name "*.manifest" -exec cp {} ${{ github.workspace }}/release/configs/ \;
+          cd ${{ github.workspace }}/release && tar -zcf ${{ env.CHIP_TYPE }}-config.tar.gz configs/
+          
+          # 整理软件包
+          mkdir -p ${{ github.workspace }}/release/packages
+          find ${{ github.workspace }}/artifacts -path "*/packages/*" -exec cp -r {} ${{ github.workspace }}/release/packages/ \;
+          cd ${{ github.workspace }}/release/packages && find . -name "*.apk" -o -name "*.ipk" | xargs cp -t . && rm -rf */ && cd .. && tar -zcf ${{ env.CHIP_TYPE }}-app.tar.gz packages/
+          
+          # 整理日志
+          mkdir -p ${{ github.workspace }}/release/logs
+          find ${{ github.workspace }}/artifacts -path "*/logs/*" -exec cp {} ${{ github.workspace }}/release/logs/ \;
+          cd ${{ github.workspace }}/release && tar -zcf ${{ env.CHIP_TYPE }}-log.tar.gz logs/
+          
+          # 复制固件文件
+          find ${{ github.workspace }}/artifacts -name "*.bin" -exec cp {} ${{ github.workspace }}/release/ \;
+          
+          # 获取软件包列表
+          echo "LUCI_APPS=$(find ${{ github.workspace }}/release/packages -name "luci-app-*.ipk" | sed 's/.*\///g' | sed 's/.ipk$//' | sort | uniq | tr '\n' ' ')" >> $GITHUB_ENV
+          
+          echo "RELEASE_PATH=${{ github.workspace }}/release" >> $GITHUB_ENV
+          
+      - name: 创建发布
+        if: steps.check-artifacts.outputs.artifacts-exists == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.DATE }}_${{ env.CHIP_TYPE }}
+          files: ${{ github.workspace }}/release/*.bin,${{ github.workspace }}/release/*.tar.gz
+          body: |
+            ## 编译信息
+            - 芯片类型: ${{ env.CHIP_TYPE }}
+            - 编译时间: ${{ env.DATE }}
+            - Luci应用: ${{ env.LUCI_APPS }}
+            
+            ## 文件说明
+            - *.bin: 固件文件
+            - ${{ env.CHIP_TYPE }}-config.tar.gz: 配置文件
+            - ${{ env.CHIP_TYPE }}-app.tar.gz: 软件包
+            - ${{ env.CHIP_TYPE }}-log.tar.gz: 编译日志
+            
+            ## 默认信息
+            - WIFI密码: 12345678
+            - LAN地址: 192.168.1.1
