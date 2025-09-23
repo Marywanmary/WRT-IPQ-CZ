@@ -55,7 +55,7 @@ jobs:
           # 构建Ultra配置的矩阵
           MATRIX_ULTRA='{"include":['
           MATRIX_ULTRA+='{"branch_name":"immwrt","branch_url":"https://github.com/laipeng668/immortalwrt.git","branch_ref":"master","branch_config":"configs/immwrt_base.config","pkg_name":"Ultra","pkg_config":"configs/Ultra.config"},'
-          MATRIX_ULTRA+='{"branch_name":"openwrt","branch_url":"https://github.com/laipeng668/openwrt.git","branch_ref":"master","branch_config":"configs/opwrt_base.config","pkg_name":"Ultra","pkg_config":"configs/Ultra.config"},'
+          MATRIX_ULTRA+='{"branch_name":"openwrt","branch_url":"https://github.com/laipeng668/openwrt.git","branch_ref":"master","branch_config":"configs/openwrt_base.config","pkg_name":"Ultra","pkg_config":"configs/Ultra.config"},'
           MATRIX_ULTRA+='{"branch_name":"libwrt","branch_url":"https://github.com/laipeng668/openwrt-6.x.git","branch_ref":"k6.12-nss","branch_config":"configs/libwrt_base.config","pkg_name":"Ultra","pkg_config":"configs/Ultra.config"}'
           MATRIX_ULTRA+=']}'
           
@@ -63,11 +63,11 @@ jobs:
           MATRIX_OTHERS='{"include":['
           # 添加Max配置
           MATRIX_OTHERS+='{"branch_name":"immwrt","branch_url":"https://github.com/laipeng668/immortalwrt.git","branch_ref":"master","branch_config":"configs/immwrt_base.config","pkg_name":"Max","pkg_config":"configs/Max.config"},'
-          MATRIX_OTHERS+='{"branch_name":"openwrt","branch_url":"https://github.com/laipeng668/openwrt.git","branch_ref":"master","branch_config":"configs/opwrt_base.config","pkg_name":"Max","pkg_config":"configs/Max.config"},'
+          MATRIX_OTHERS+='{"branch_name":"openwrt","branch_url":"https://github.com/laipeng668/openwrt.git","branch_ref":"master","branch_config":"configs/openwrt_base.config","pkg_name":"Max","pkg_config":"configs/Max.config"},'
           MATRIX_OTHERS+='{"branch_name":"libwrt","branch_url":"https://github.com/laipeng668/openwrt-6.x.git","branch_ref":"k6.12-nss","branch_config":"configs/libwrt_base.config","pkg_name":"Max","pkg_config":"configs/Max.config"},'
           # 添加Pro配置
           MATRIX_OTHERS+='{"branch_name":"immwrt","branch_url":"https://github.com/laipeng668/immortalwrt.git","branch_ref":"master","branch_config":"configs/immwrt_base.config","pkg_name":"Pro","pkg_config":"configs/Pro.config"},'
-          MATRIX_OTHERS+='{"branch_name":"openwrt","branch_url":"https://github.com/laipeng668/openwrt.git","branch_ref":"master","branch_config":"configs/opwrt_base.config","pkg_name":"Pro","pkg_config":"configs/Pro.config"},'
+          MATRIX_OTHERS+='{"branch_name":"openwrt","branch_url":"https://github.com/laipeng668/openwrt.git","branch_ref":"master","branch_config":"configs/openwrt_base.config","pkg_name":"Pro","pkg_config":"configs/Pro.config"},'
           MATRIX_OTHERS+='{"branch_name":"libwrt","branch_url":"https://github.com/laipeng668/openwrt-6.x.git","branch_ref":"k6.12-nss","branch_config":"configs/libwrt_base.config","pkg_name":"Pro","pkg_config":"configs/Pro.config"}'
           MATRIX_OTHERS+=']}'
           
