@@ -90,9 +90,9 @@ jobs:
       - name: 生成编译矩阵
         id: set-matrix
         run: |
-          # 将环境变量转换为单行JSON字符串
-          BRANCHES_JSON=$(echo '${{ env.BRANCHES }}' | tr -d '\n')
-          PACKAGES_JSON=$(echo '${{ env.PACKAGE_CONFIGS }}' | tr -d '\n')
+          # 将环境变量中的多行JSON转换为单行JSON字符串
+          BRANCHES_JSON=$(echo '${{ env.BRANCHES }}' | jq -c '.')
+          PACKAGES_JSON=$(echo '${{ env.PACKAGE_CONFIGS }}' | jq -c '.')
           
           # 使用jq工具生成矩阵变量，组合所有分支和软件包配置
           MATRIX=$(jq -n --argjson branches "$BRANCHES_JSON" --argjson packages "$PACKAGES_JSON" '{
@@ -308,7 +308,7 @@ jobs:
           git clone --depth=1 https://github.com/gdy666/luci-app-lucky $OPENWRT_PATH/package/luci-app-lucky
           git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo $OPENWRT_PATH/package/luci-app-momo
           git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki $OPENWRT_PATH/package/nikki
-          git clone --depth=1 https://github.com/vernesson/OpenClash $OPENWRT_PATH/package/OpenClash
+          git clone --depth=1 https://github.com/vernesong/OpenClash $OPENWRT_PATH/package/OpenClash
 
           # ====== 添加kenzok8软件源并且让它的优先级最低，也就是如果有软件包冲突，它的软件包会被其它软件源替代。 ======
           git clone small8 https://github.com/kenzok8/small-package
