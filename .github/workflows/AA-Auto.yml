@@ -1,4 +1,3 @@
-# AA-Auto.yml - OpenWrt多分支多配置分层编译工作流
 name: AA-Auto
 
 # 触发方式：手动触发和北京时间周五0点（UTC时间周四16点）
@@ -52,56 +51,25 @@ jobs:
       - name: 生成编译矩阵
         id: set-matrix
         run: |
-          # 直接定义分支和软件包配置的JSON数据，避免多行字符串问题
-          BRANCHES_JSON='[
-            {
-              "name": "immwrt",
-              "url": "https://github.com/laipeng668/immortalwrt.git",
-              "branch": "master",
-              "base_config": "configs/immwrt_base.config"
-            },
-            {
-              "name": "openwrt",
-              "url": "https://github.com/laipeng668/openwrt.git",
-              "branch": "master",
-              "base_config": "configs/opwrt_base.config"
-            },
-            {
-              "name": "libwrt",
-              "url": "https://github.com/laipeng668/openwrt-6.x.git",
-              "branch": "k6.12-nss",
-              "base_config": "configs/libwrt_base.config"
-            }
-          ]'
+          # 直接构建JSON矩阵字符串，避免复杂的jq命令
+          MATRIX='{"include":['
           
-          PACKAGES_JSON='[
-            {
-              "name": "Pro",
-              "file": "configs/Pro.config"
-            },
-            {
-              "name": "Max",
-              "file": "configs/Max.config"
-            },
-            {
-              "name": "Ultra",
-              "file": "configs/Ultra.config"
-            }
-          ]'
+          # 添加immwrt分支的配置
+          MATRIX+='{"branch_name":"immwrt","branch_url":"https://github.com/laipeng668/immortalwrt.git","branch_ref":"master","branch_config":"configs/immwrt_base.config","pkg_name":"Pro","pkg_config":"configs/Pro.config"},'
+          MATRIX+='{"branch_name":"immwrt","branch_url":"https://github.com/laipeng668/immortalwrt.git","branch_ref":"master","branch_config":"configs/immwrt_base.config","pkg_name":"Max","pkg_config":"configs/Max.config"},'
+          MATRIX+='{"branch_name":"immwrt","branch_url":"https://github.com/laipeng668/immortalwrt.git","branch_ref":"master","branch_config":"configs/immwrt_base.config","pkg_name":"Ultra","pkg_config":"configs/Ultra.config"},'
           
-          # 使用jq工具生成矩阵变量，组合所有分支和软件包配置
-          MATRIX=$(jq -n --argjson branches "$BRANCHES_JSON" --argjson packages "$PACKAGES_JSON" '{
-            include: [
-              $branches[] as $branch | $packages[] as $pkg | {
-                branch_name: $branch.name,
-                branch_url: $branch.url,
-                branch_ref: $branch.branch,
-                branch_config: $branch.base_config,
-                pkg_name: $pkg.name,
-                pkg_config: $pkg.file
-              }
-            ]
-          }')
+          # 添加openwrt分支的配置
+          MATRIX+='{"branch_name":"openwrt","branch_url":"https://github.com/laipeng668/openwrt.git","branch_ref":"master","branch_config":"configs/opwrt_base.config","pkg_name":"Pro","pkg_config":"configs/Pro.config"},'
+          MATRIX+='{"branch_name":"openwrt","branch_url":"https://github.com/laipeng668/openwrt.git","branch_ref":"master","branch_config":"configs/opwrt_base.config","pkg_name":"Max","pkg_config":"configs/Max.config"},'
+          MATRIX+='{"branch_name":"openwrt","branch_url":"https://github.com/laipeng668/openwrt.git","branch_ref":"master","branch_config":"configs/opwrt_base.config","pkg_name":"Ultra","pkg_config":"configs/Ultra.config"},'
+          
+          # 添加libwrt分支的配置
+          MATRIX+='{"branch_name":"libwrt","branch_url":"https://github.com/laipeng668/openwrt-6.x.git","branch_ref":"k6.12-nss","branch_config":"configs/libwrt_base.config","pkg_name":"Pro","pkg_config":"configs/Pro.config"},'
+          MATRIX+='{"branch_name":"libwrt","branch_url":"https://github.com/laipeng668/openwrt-6.x.git","branch_ref":"k6.12-nss","branch_config":"configs/libwrt_base.config","pkg_name":"Max","pkg_config":"configs/Max.config"},'
+          MATRIX+='{"branch_name":"libwrt","branch_url":"https://github.com/laipeng668/openwrt-6.x.git","branch_ref":"k6.12-nss","branch_config":"configs/libwrt_base.config","pkg_name":"Ultra","pkg_config":"configs/Ultra.config"}'
+          
+          MATRIX+=']}'
           
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
           echo "生成的编译矩阵："
@@ -547,14 +515,3 @@ jobs:
         with:
           name: ${{ env.DATE }} for ${{ env.CHIP_TYPE }}
           allowUpdates: true
-          tag: ${{ env.FILE_DATE }}-${{ env.CHIP_TYPE }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          artifacts: ${{ env.RELEASE_PATH }}/*
-          body: |
-            默认管理地址：192.168.111.1 默认用户：root 默认密码：none
-            默认WIFI密码: 12345678
-            固件包括${{ env.CHIP_TYPE }}的京东云亚瑟、雅典娜
-            固件内核版本：${{ env.VERSION_KERNEL }}
-            作者: Mary
-            发布时间: ${{ env.DATE }}
-            编译的luci-app列表：${{ env.LUCI_APPS }}
