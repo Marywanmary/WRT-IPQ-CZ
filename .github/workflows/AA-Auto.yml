@@ -267,15 +267,28 @@ jobs:
             cd .. && rm -rf $repodir
           }
 
+          # 确保目标目录存在
+          mkdir -p $OPENWRT_PATH/feeds/packages/net
+          mkdir -p $OPENWRT_PATH/feeds/luci/applications
+          mkdir -p $OPENWRT_PATH/feeds/packages/lang
+
           # Go & OpenList & ariang & frp & AdGuardHome & WolPlus & Lucky & OpenAppFilter & 集客无线AC控制器 & 雅典娜LED控制
           git clone --depth=1 https://github.com/sbwml/packages_lang_golang $OPENWRT_PATH/feeds/packages/lang/golang
           git clone --depth=1 https://github.com/sbwml/luci-app-openlist2 $OPENWRT_PATH/package/openlist
           git_sparse_clone ariang https://github.com/laipeng668/packages net/ariang
           git_sparse_clone frp https://github.com/laipeng668/packages net/frp
-          mv -f $OPENWRT_PATH/package/frp $OPENWRT_PATH/feeds/packages/net/frp
+          # 确保目标目录存在后再移动
+          if [ -d "$OPENWRT_PATH/package/frp" ]; then
+            mv -f $OPENWRT_PATH/package/frp $OPENWRT_PATH/feeds/packages/net/frp
+          fi
           git_sparse_clone frp https://github.com/laipeng668/luci applications/luci-app-frpc applications/luci-app-frps
-          mv -f $OPENWRT_PATH/package/luci-app-frpc $OPENWRT_PATH/feeds/luci/applications/luci-app-frpc
-          mv -f $OPENWRT_PATH/package/luci-app-frps $OPENWRT_PATH/feeds/luci/applications/luci-app-frps
+          # 确保目标目录存在后再移动
+          if [ -d "$OPENWRT_PATH/package/luci-app-frpc" ]; then
+            mv -f $OPENWRT_PATH/package/luci-app-frpc $OPENWRT_PATH/feeds/luci/applications/luci-app-frpc
+          fi
+          if [ -d "$OPENWRT_PATH/package/luci-app-frps" ]; then
+            mv -f $OPENWRT_PATH/package/luci-app-frps $OPENWRT_PATH/feeds/luci/applications/luci-app-frps
+          fi
           git_sparse_clone main https://github.com/VIKINGYFY/packages luci-app-wolplus
           git clone --depth=1 https://github.com/gdy666/luci-app-lucky $OPENWRT_PATH/package/luci-app-lucky
           git clone --depth=1 https://github.com/destan19/OpenAppFilter.git $OPENWRT_PATH/package/OpenAppFilter
@@ -683,15 +696,28 @@ jobs:
             cd .. && rm -rf $repodir
           }
 
+          # 确保目标目录存在
+          mkdir -p $OPENWRT_PATH/feeds/packages/net
+          mkdir -p $OPENWRT_PATH/feeds/luci/applications
+          mkdir -p $OPENWRT_PATH/feeds/packages/lang
+
           # Go & OpenList & ariang & frp & AdGuardHome & WolPlus & Lucky & OpenAppFilter & 集客无线AC控制器 & 雅典娜LED控制
           git clone --depth=1 https://github.com/sbwml/packages_lang_golang $OPENWRT_PATH/feeds/packages/lang/golang
           git clone --depth=1 https://github.com/sbwml/luci-app-openlist2 $OPENWRT_PATH/package/openlist
           git_sparse_clone ariang https://github.com/laipeng668/packages net/ariang
           git_sparse_clone frp https://github.com/laipeng668/packages net/frp
-          mv -f $OPENWRT_PATH/package/frp $OPENWRT_PATH/feeds/packages/net/frp
+          # 确保目标目录存在后再移动
+          if [ -d "$OPENWRT_PATH/package/frp" ]; then
+            mv -f $OPENWRT_PATH/package/frp $OPENWRT_PATH/feeds/packages/net/frp
+          fi
           git_sparse_clone frp https://github.com/laipeng668/luci applications/luci-app-frpc applications/luci-app-frps
-          mv -f $OPENWRT_PATH/package/luci-app-frpc $OPENWRT_PATH/feeds/luci/applications/luci-app-frpc
-          mv -f $OPENWRT_PATH/package/luci-app-frps $OPENWRT_PATH/feeds/luci/applications/luci-app-frps
+          # 确保目标目录存在后再移动
+          if [ -d "$OPENWRT_PATH/package/luci-app-frpc" ]; then
+            mv -f $OPENWRT_PATH/package/luci-app-frpc $OPENWRT_PATH/feeds/luci/applications/luci-app-frpc
+          fi
+          if [ -d "$OPENWRT_PATH/package/luci-app-frps" ]; then
+            mv -f $OPENWRT_PATH/package/luci-app-frps $OPENWRT_PATH/feeds/luci/applications/luci-app-frps
+          fi
           git_sparse_clone main https://github.com/VIKINGYFY/packages luci-app-wolplus
           git clone --depth=1 https://github.com/gdy666/luci-app-lucky $OPENWRT_PATH/package/luci-app-lucky
           git clone --depth=1 https://github.com/destan19/OpenAppFilter.git $OPENWRT_PATH/package/OpenAppFilter
