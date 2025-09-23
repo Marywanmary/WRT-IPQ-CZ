@@ -88,11 +88,14 @@ jobs:
     
     steps:
       - name: 清理磁盘空间
-        uses: sbwml/actions@free-disk
+        uses: jlumbroso/free-disk-space@main
         with:
-          root-reserve-gb: 10
-          swap-size-gb: 2
-          build-mount-path: /mnt/build
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
 
       - name: 检查服务器性能
         run: |
@@ -288,6 +291,25 @@ jobs:
           cd $OPENWRT_PATH
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+
+      - name: 检查PHP相关包配置
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        run: |
+          cd $OPENWRT_PATH
+          echo "检查配置文件中可能引起问题的PHP相关配置..."
+          # 查找所有PHP相关的配置
+          php_configs=$(grep -i "CONFIG_PACKAGE_php" .config || true)
+          if [ -n "$php_configs" ]; then
+            echo "发现PHP相关配置，将被禁用："
+            echo "$php_configs"
+            # 禁用所有PHP相关的包
+            sed -i '/CONFIG_PACKAGE_php/d' .config
+            echo "已禁用所有PHP相关包"
+          else
+            echo "未发现PHP相关配置"
+          fi
+          # 重新生成配置文件
+          make defconfig > /dev/null 2>&1
 
       - name: 编译依赖包
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
