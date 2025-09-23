@@ -157,16 +157,19 @@ jobs:
           echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
           echo "HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
           echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
-          # 生成共享缓存key，不包含配置名称，以便不同配置间共享
-          echo "SHARED_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}-${{ env.HASH }}" >> $GITHUB_ENV
+          
+          # 分层缓存键
+          echo "CHIP_CACHE_KEY=${{ env.CHIP_TYPE }}" >> $GITHUB_ENV
+          echo "BRANCH_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}" >> $GITHUB_ENV
+          echo "VERSION_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}-${{ env.HASH }}" >> $GITHUB_ENV
 
       - name: 恢复工具链缓存
         if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-toolchain
+          key: ${{ env.CHIP_CACHE_KEY }}-toolchain
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-toolchain-
+            ${{ env.CHIP_CACHE_KEY }}-toolchain-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
         continue-on-error: true
@@ -191,9 +194,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-toolchain ${{ env.CACHE_DATE }}
+          key: ${{ env.CHIP_CACHE_KEY }}-toolchain ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-toolchain-
+            ${{ env.CHIP_CACHE_KEY }}-toolchain-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
 
@@ -201,9 +204,9 @@ jobs:
         if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-packages
+          key: ${{ env.BRANCH_CACHE_KEY }}-packages
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-packages-
+            ${{ env.BRANCH_CACHE_KEY }}-packages-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -301,7 +304,6 @@ jobs:
           git clone --depth=1 https://github.com/sirpdboy/luci-app-partexp $OPENWRT_PATH/package/luci-app-partexp
           git clone --depth=1 https://github.com/sirpdboy/luci-app-taskplan $OPENWRT_PATH/package/luci-app-taskplan
           git clone --depth=1 https://github.com/tailscale/tailscale $OPENWRT_PATH/package/tailscale
-          git clone --depth=1 https://github.com/gdy666/luci-app-lucky $OPENWRT_PATH/package/luci-app-lucky
           git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo $OPENWRT_PATH/package/luci-app-momo
           git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki $OPENWRT_PATH/package/nikki
           git clone --depth=1 https://github.com/vernesong/OpenClash $OPENWRT_PATH/package/OpenClash
@@ -348,9 +350,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-packages ${{ env.CACHE_DATE }}
+          key: ${{ env.BRANCH_CACHE_KEY }}-packages ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-packages-
+            ${{ env.BRANCH_CACHE_KEY }}-packages-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -360,9 +362,9 @@ jobs:
         if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-kernel
+          key: ${{ env.BRANCH_CACHE_KEY }}-kernel
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-kernel-
+            ${{ env.BRANCH_CACHE_KEY }}-kernel-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
         continue-on-error: true
@@ -387,9 +389,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-kernel ${{ env.CACHE_DATE }}
+          key: ${{ env.BRANCH_CACHE_KEY }}-kernel ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-kernel-
+            ${{ env.BRANCH_CACHE_KEY }}-kernel-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
 
@@ -397,9 +399,9 @@ jobs:
         if: github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-base
+          key: ${{ env.VERSION_CACHE_KEY }}-base
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-base-
+            ${{ env.VERSION_CACHE_KEY }}-base-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
         continue-on-error: true
@@ -425,9 +427,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-base ${{ env.CACHE_DATE }}
+          key: ${{ env.VERSION_CACHE_KEY }}-base ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-base-
+            ${{ env.VERSION_CACHE_KEY }}-base-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
 
@@ -496,8 +498,16 @@ jobs:
       - name: 删除旧缓存
         if: always()
         run: |
-          # 获取缓存列表并删除
-          gh cache list --key ${{ env.SHARED_CACHE_KEY }}- --json key --jq '.[] | .key' | while read -r key; do
+          # 删除芯片级别的旧缓存
+          gh cache list --key ${{ env.CHIP_CACHE_KEY }}- --json key --jq '.[] | .key' | while read -r key; do
+            gh cache delete "$key"
+          done
+          # 删除分支级别的旧缓存
+          gh cache list --key ${{ env.BRANCH_CACHE_KEY }}- --json key --jq '.[] | .key' | while read -r key; do
+            gh cache delete "$key"
+          done
+          # 删除版本级别的旧缓存
+          gh cache list --key ${{ env.VERSION_CACHE_KEY }}- --json key --jq '.[] | .key' | while read -r key; do
             gh cache delete "$key"
           done
           # 输出缓存状态
@@ -586,16 +596,19 @@ jobs:
           echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
           echo "HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
           echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
-          # 生成共享缓存key，不包含配置名称，以便不同配置间共享
-          echo "SHARED_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}-${{ env.HASH }}" >> $GITHUB_ENV
+          
+          # 分层缓存键
+          echo "CHIP_CACHE_KEY=${{ env.CHIP_TYPE }}" >> $GITHUB_ENV
+          echo "BRANCH_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}" >> $GITHUB_ENV
+          echo "VERSION_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}-${{ env.HASH }}" >> $GITHUB_ENV
 
       - name: 恢复工具链缓存
         if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-toolchain
+          key: ${{ env.CHIP_CACHE_KEY }}-toolchain
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-toolchain-
+            ${{ env.CHIP_CACHE_KEY }}-toolchain-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
         continue-on-error: true
@@ -620,9 +633,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-toolchain ${{ env.CACHE_DATE }}
+          key: ${{ env.CHIP_CACHE_KEY }}-toolchain ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-toolchain-
+            ${{ env.CHIP_CACHE_KEY }}-toolchain-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
 
@@ -630,9 +643,9 @@ jobs:
         if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-packages
+          key: ${{ env.BRANCH_CACHE_KEY }}-packages
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-packages-
+            ${{ env.BRANCH_CACHE_KEY }}-packages-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -730,7 +743,6 @@ jobs:
           git clone --depth=1 https://github.com/sirpdboy/luci-app-partexp $OPENWRT_PATH/package/luci-app-partexp
           git clone --depth=1 https://github.com/sirpdboy/luci-app-taskplan $OPENWRT_PATH/package/luci-app-taskplan
           git clone --depth=1 https://github.com/tailscale/tailscale $OPENWRT_PATH/package/tailscale
-          git clone --depth=1 https://github.com/gdy666/luci-app-lucky $OPENWRT_PATH/package/luci-app-lucky
           git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-momo $OPENWRT_PATH/package/luci-app-momo
           git clone --depth=1 https://github.com/nikkinikki-org/OpenWrt-nikki $OPENWRT_PATH/package/nikki
           git clone --depth=1 https://github.com/vernesong/OpenClash $OPENWRT_PATH/package/OpenClash
@@ -777,9 +789,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-packages ${{ env.CACHE_DATE }}
+          key: ${{ env.BRANCH_CACHE_KEY }}-packages ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-packages-
+            ${{ env.BRANCH_CACHE_KEY }}-packages-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -789,9 +801,9 @@ jobs:
         if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-kernel
+          key: ${{ env.BRANCH_CACHE_KEY }}-kernel
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-kernel-
+            ${{ env.BRANCH_CACHE_KEY }}-kernel-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
         continue-on-error: true
@@ -816,9 +828,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-kernel ${{ env.CACHE_DATE }}
+          key: ${{ env.BRANCH_CACHE_KEY }}-kernel ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-kernel-
+            ${{ env.BRANCH_CACHE_KEY }}-kernel-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
 
@@ -826,9 +838,9 @@ jobs:
         if: github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-base
+          key: ${{ env.VERSION_CACHE_KEY }}-base
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-base-
+            ${{ env.VERSION_CACHE_KEY }}-base-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
         continue-on-error: true
@@ -854,9 +866,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-base ${{ env.CACHE_DATE }}
+          key: ${{ env.VERSION_CACHE_KEY }}-base ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-base-
+            ${{ env.VERSION_CACHE_KEY }}-base-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
 
@@ -925,8 +937,16 @@ jobs:
       - name: 删除旧缓存
         if: always()
         run: |
-          # 获取缓存列表并删除
-          gh cache list --key ${{ env.SHARED_CACHE_KEY }}- --json key --jq '.[] | .key' | while read -r key; do
+          # 删除芯片级别的旧缓存
+          gh cache list --key ${{ env.CHIP_CACHE_KEY }}- --json key --jq '.[] | .key' | while read -r key; do
+            gh cache delete "$key"
+          done
+          # 删除分支级别的旧缓存
+          gh cache list --key ${{ env.BRANCH_CACHE_KEY }}- --json key --jq '.[] | .key' | while read -r key; do
+            gh cache delete "$key"
+          done
+          # 删除版本级别的旧缓存
+          gh cache list --key ${{ env.VERSION_CACHE_KEY }}- --json key --jq '.[] | .key' | while read -r key; do
             gh cache delete "$key"
           done
           # 输出缓存状态
@@ -935,80 +955,3 @@ jobs:
           echo "staging: $(du -sh $OPENWRT_PATH/staging_dir | cut -f 1)"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # 发布阶段：整理所有构建产物并发布到Release
-  release:
-    name: 发布固件
-    needs: [build-ultra, build-others]  # 依赖两个编译阶段
-    runs-on: ubuntu-22.04
-    if: always()  # 即使有构建失败也执行
-    
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@main
-        
-      - name: 下载所有构建产物
-        uses: actions/download-artifact@main
-        with:
-          path: ${{ github.workspace }}/artifacts
-          
-      - name: 检查构建产物
-        id: check-artifacts
-        run: |
-          # 检查artifacts目录是否存在
-          if [ -d "${{ github.workspace }}/artifacts" ]; then
-            echo "artifacts-exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "artifacts-exists=false" >> $GITHUB_OUTPUT
-            echo "警告：没有找到构建产物，跳过发布步骤"
-          fi
-          
-      - name: 整理发布文件
-        if: steps.check-artifacts.outputs.artifacts-exists == 'true'
-        run: |
-          # 创建最终发布目录
-          mkdir -p ${{ github.workspace }}/release
-          
-          # 整理配置文件
-          mkdir -p ${{ github.workspace }}/release/configs
-          find ${{ github.workspace }}/artifacts -name "*.config" -exec cp {} ${{ github.workspace }}/release/configs/ \;
-          find ${{ github.workspace }}/artifacts -name "*.config.buildinfo" -exec cp {} ${{ github.workspace }}/release/configs/ \;
-          find ${{ github.workspace }}/artifacts -name "*.manifest" -exec cp {} ${{ github.workspace }}/release/configs/ \;
-          cd ${{ github.workspace }}/release && tar -zcf ${{ env.CHIP_TYPE }}-config.tar.gz configs/
-          
-          # 整理软件包
-          mkdir -p ${{ github.workspace }}/release/packages
-          find ${{ github.workspace }}/artifacts -path "*/packages/*" -exec cp -r {} ${{ github.workspace }}/release/packages/ \;
-          cd ${{ github.workspace }}/release/packages && find . -name "*.apk" -o -name "*.ipk" | xargs cp -t . && rm -rf */ && cd .. && tar -zcf ${{ env.CHIP_TYPE }}-app.tar.gz packages/
-          
-          # 整理日志
-          mkdir -p ${{ github.workspace }}/release/logs
-          find ${{ github.workspace }}/artifacts -path "*/logs/*" -exec cp {} ${{ github.workspace }}/release/logs/ \;
-          cd ${{ github.workspace }}/release && tar -zcf ${{ env.CHIP_TYPE }}-log.tar.gz logs/
-          
-          # 复制固件文件
-          find ${{ github.workspace }}/artifacts -name "*.bin" -exec cp {} ${{ github.workspace }}/release/ \;
-          
-          # 获取软件包列表
-          echo "LUCI_APPS=$(find ${{ github.workspace }}/release/packages -name "luci-app-*.ipk" | sed 's/.*\///g' | sed 's/.ipk$//' | sort | uniq | tr '\n' ' ')" >> $GITHUB_ENV
-          
-          echo "RELEASE_PATH=${{ github.workspace }}/release" >> $GITHUB_ENV
-          
-      - name: 创建发布
-        if: steps.check-artifacts.outputs.artifacts-exists == 'true'
-        uses: ncipollo/release-action@main
-        with:
-          name: ${{ env.DATE }} for ${{ env.CHIP_TYPE }}
-          allowUpdates: true
-          artifacts: "${{ github.workspace }}/release/*.bin,${{ github.workspace }}/release/*.tar.gz"
-          body: |
-            ## 编译信息
-            - 芯片类型: ${{ env.CHIP_TYPE }}
-            - 编译时间: ${{ env.DATE }}
-            - Luci应用: ${{ env.LUCI_APPS }}
-            
-            ## 文件说明
-            - *.bin: 固件文件
-            - ${{ env.CHIP_TYPE }}-config.tar.gz: 配置文件
-            - ${{ env.CHIP_TYPE }}-app.tar.gz: 软件包
-            - ${{ env.CHIP_TYPE }}-log.tar.gz: 编译日志
