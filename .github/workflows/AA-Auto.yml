@@ -261,7 +261,9 @@ jobs:
             git clone --depth=1 -b $branch --single-branch --filter=blob:none --sparse $repourl
             repodir=$(echo $repourl | awk -F '/' '{print $(NF)}')
             cd $repodir && git sparse-checkout set $@
-            mv -f $@ ../$OPENWRT_PATH/package
+            # 修复路径问题，确保目标目录存在
+            mkdir -p $OPENWRT_PATH/package
+            mv -f $@ $OPENWRT_PATH/package/
             cd .. && rm -rf $repodir
           }
 
@@ -675,7 +677,9 @@ jobs:
             git clone --depth=1 -b $branch --single-branch --filter=blob:none --sparse $repourl
             repodir=$(echo $repourl | awk -F '/' '{print $(NF)}')
             cd $repodir && git sparse-checkout set $@
-            mv -f $@ ../$OPENWRT_PATH/package
+            # 修复路径问题，确保目标目录存在
+            mkdir -p $OPENWRT_PATH/package
+            mv -f $@ $OPENWRT_PATH/package/
             cd .. && rm -rf $repodir
           }
 
