@@ -157,14 +157,16 @@ jobs:
           echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
           echo "HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
           echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
+          # 生成共享缓存key，不包含配置名称，以便不同配置间共享
+          echo "SHARED_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}-${{ env.HASH }}" >> $GITHUB_ENV
 
       - name: 恢复工具链缓存
         if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-toolchain
+          key: ${{ env.SHARED_CACHE_KEY }}-toolchain
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-toolchain-
+            ${{ env.SHARED_CACHE_KEY }}-toolchain-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
         continue-on-error: true
@@ -189,9 +191,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-toolchain ${{ env.CACHE_DATE }}
+          key: ${{ env.SHARED_CACHE_KEY }}-toolchain ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-toolchain-
+            ${{ env.SHARED_CACHE_KEY }}-toolchain-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
 
@@ -199,9 +201,9 @@ jobs:
         if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-packages
+          key: ${{ env.SHARED_CACHE_KEY }}-packages
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-packages-
+            ${{ env.SHARED_CACHE_KEY }}-packages-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -331,9 +333,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-packages ${{ env.CACHE_DATE }}
+          key: ${{ env.SHARED_CACHE_KEY }}-packages ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-packages-
+            ${{ env.SHARED_CACHE_KEY }}-packages-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -343,9 +345,9 @@ jobs:
         if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-kernel
+          key: ${{ env.SHARED_CACHE_KEY }}-kernel
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-kernel-
+            ${{ env.SHARED_CACHE_KEY }}-kernel-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
         continue-on-error: true
@@ -370,9 +372,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-kernel ${{ env.CACHE_DATE }}
+          key: ${{ env.SHARED_CACHE_KEY }}-kernel ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-kernel-
+            ${{ env.SHARED_CACHE_KEY }}-kernel-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
 
@@ -380,9 +382,9 @@ jobs:
         if: github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-base
+          key: ${{ env.SHARED_CACHE_KEY }}-base
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-base-
+            ${{ env.SHARED_CACHE_KEY }}-base-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
         continue-on-error: true
@@ -408,9 +410,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-base ${{ env.CACHE_DATE }}
+          key: ${{ env.SHARED_CACHE_KEY }}-base ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-base-
+            ${{ env.SHARED_CACHE_KEY }}-base-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
 
@@ -480,7 +482,7 @@ jobs:
         if: always()
         run: |
           # 获取缓存列表并删除
-          gh cache list --key ${{ env.SOURCE_REPO }}-${{ matrix.branch_ref }}-${{ env.DEVICE_TARGET }}- --json key --jq '.[] | .key' | while read -r key; do
+          gh cache list --key ${{ env.SHARED_CACHE_KEY }}- --json key --jq '.[] | .key' | while read -r key; do
             gh cache delete "$key"
           done
           # 输出缓存状态
@@ -569,15 +571,16 @@ jobs:
           echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
           echo "HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
           echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
+          # 生成共享缓存key，不包含配置名称，以便不同配置间共享
+          echo "SHARED_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}-${{ env.HASH }}" >> $GITHUB_ENV
 
       - name: 恢复工具链缓存
         if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-toolchain
+          key: ${{ env.SHARED_CACHE_KEY }}-toolchain
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-Ultra-toolchain  # 优先使用Ultra配置的工具链缓存
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-toolchain-
+            ${{ env.SHARED_CACHE_KEY }}-toolchain-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
         continue-on-error: true
@@ -602,9 +605,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-toolchain ${{ env.CACHE_DATE }}
+          key: ${{ env.SHARED_CACHE_KEY }}-toolchain ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-toolchain-
+            ${{ env.SHARED_CACHE_KEY }}-toolchain-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
 
@@ -612,10 +615,9 @@ jobs:
         if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-packages
+          key: ${{ env.SHARED_CACHE_KEY }}-packages
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-Ultra-packages  # 优先使用Ultra配置的依赖包缓存
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-packages-
+            ${{ env.SHARED_CACHE_KEY }}-packages-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -745,9 +747,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-packages ${{ env.CACHE_DATE }}
+          key: ${{ env.SHARED_CACHE_KEY }}-packages ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-packages-
+            ${{ env.SHARED_CACHE_KEY }}-packages-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -757,10 +759,9 @@ jobs:
         if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-kernel
+          key: ${{ env.SHARED_CACHE_KEY }}-kernel
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-Ultra-kernel  # 优先使用Ultra配置的内核缓存
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-kernel-
+            ${{ env.SHARED_CACHE_KEY }}-kernel-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
         continue-on-error: true
@@ -785,9 +786,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-kernel ${{ env.CACHE_DATE }}
+          key: ${{ env.SHARED_CACHE_KEY }}-kernel ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-kernel-
+            ${{ env.SHARED_CACHE_KEY }}-kernel-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
 
@@ -795,10 +796,9 @@ jobs:
         if: github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-base
+          key: ${{ env.SHARED_CACHE_KEY }}-base
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-Ultra-base  # 优先使用Ultra配置的基础系统缓存
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-base-
+            ${{ env.SHARED_CACHE_KEY }}-base-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
         continue-on-error: true
@@ -824,9 +824,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@main
         with:
-          key: ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-base ${{ env.CACHE_DATE }}
+          key: ${{ env.SHARED_CACHE_KEY }}-base ${{ env.CACHE_DATE }}
           restore-keys: |
-            ${{ env.SOURCE_REPO }}-${{ env.HASH }}-${{ matrix.pkg_name }}-base-
+            ${{ env.SHARED_CACHE_KEY }}-base-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
 
@@ -896,7 +896,7 @@ jobs:
         if: always()
         run: |
           # 获取缓存列表并删除
-          gh cache list --key ${{ env.SOURCE_REPO }}-${{ matrix.branch_ref }}-${{ env.DEVICE_TARGET }}- --json key --jq '.[] | .key' | while read -r key; do
+          gh cache list --key ${{ env.SHARED_CACHE_KEY }}- --json key --jq '.[] | .key' | while read -r key; do
             gh cache delete "$key"
           done
           # 输出缓存状态
