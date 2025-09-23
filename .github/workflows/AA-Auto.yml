@@ -90,12 +90,9 @@ jobs:
       - name: 清理磁盘空间
         uses: sbwml/actions@free-disk
         with:
-          tool-cache: true
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          swap-storage: true
+          root-reserve-gb: 10
+          swap-size-gb: 2
+          build-mount-path: /mnt/build
 
       - name: 检查服务器性能
         run: |
@@ -214,6 +211,18 @@ jobs:
             exit 1
           fi
 
+      - name: 诊断编译环境
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        run: |
+          cd $OPENWRT_PATH
+          echo "检查依赖包状态..."
+          ./scripts/feeds list -a
+          echo "检查配置文件..."
+          cat .config | grep -i php || echo "未找到PHP相关配置"
+          echo "检查系统资源..."
+          free -h
+          df -h
+
       - name: 加载自定义配置
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
         run: |
@@ -227,15 +236,15 @@ jobs:
           sed -i "s/option encryption 'psk2'/option encryption 'none'/g" $OPENWRT_PATH/package/kernel/mac80211/files/lib/wifi/mac80211.sh
           sed -i "s/option key '12345678'/option key ''/g" $OPENWRT_PATH/package/kernel/mac80211/files/lib/wifi/mac80211.sh
 
-          # 移除要替换的包
-          rm -rf $OPENWRT_PATH/feeds/luci/applications/luci-app-appfilter
-          rm -rf $OPENWRT_PATH/feeds/luci/applications/luci-app-frpc
-          rm -rf $OPENWRT_PATH/feeds/luci/applications/luci-app-frps
-          rm -rf $OPENWRT_PATH/feeds/packages/net/open-app-filter
-          rm -rf $OPENWRT_PATH/feeds/packages/net/adguardhome
-          rm -rf $OPENWRT_PATH/feeds/packages/net/ariang
-          rm -rf $OPENWRT_PATH/feeds/packages/net/frp
-          rm -rf $OPENWRT_PATH/feeds/packages/lang/golang
+          # 安全移除要替换的包（先检查是否存在）
+          [ -d "$OPENWRT_PATH/feeds/luci/applications/luci-app-appfilter" ] && rm -rf $OPENWRT_PATH/feeds/luci/applications/luci-app-appfilter
+          [ -d "$OPENWRT_PATH/feeds/luci/applications/luci-app-frpc" ] && rm -rf $OPENWRT_PATH/feeds/luci/applications/luci-app-frpc
+          [ -d "$OPENWRT_PATH/feeds/luci/applications/luci-app-frps" ] && rm -rf $OPENWRT_PATH/feeds/luci/applications/luci-app-frps
+          [ -d "$OPENWRT_PATH/feeds/packages/net/open-app-filter" ] && rm -rf $OPENWRT_PATH/feeds/packages/net/open-app-filter
+          [ -d "$OPENWRT_PATH/feeds/packages/net/adguardhome" ] && rm -rf $OPENWRT_PATH/feeds/packages/net/adguardhome
+          [ -d "$OPENWRT_PATH/feeds/packages/net/ariang" ] && rm -rf $OPENWRT_PATH/feeds/packages/net/ariang
+          [ -d "$OPENWRT_PATH/feeds/packages/net/frp" ] && rm -rf $OPENWRT_PATH/feeds/packages/net/frp
+          [ -d "$OPENWRT_PATH/feeds/packages/lang/golang" ] && rm -rf $OPENWRT_PATH/feeds/packages/lang/golang
 
           # Git稀疏克隆，只克隆指定目录到本地
           function git_sparse_clone() {
@@ -285,7 +294,11 @@ jobs:
         run: |
           cd $OPENWRT_PATH
           echo "开始编译依赖包..."
-          make package/compile -j$(nproc) || make package/compile -j1 V=s
+          # 尝试编译，如果失败则输出更详细的错误信息
+          if ! make package/compile -j$(nproc); then
+            echo "编译依赖包失败，尝试单线程编译..."
+            make package/compile -j1 V=s
+          fi
           echo "依赖包编译完成"
 
       - name: 缓存依赖包
@@ -515,3 +528,15 @@ jobs:
         with:
           name: ${{ env.DATE }} for ${{ env.CHIP_TYPE }}
           allowUpdates: true
+          artifacts: "${{ github.workspace }}/release/*.bin,${{ github.workspace }}/release/*.tar.gz"
+          body: |
+            ## 编译信息
+            - 芯片类型: ${{ env.CHIP_TYPE }}
+            - 编译时间: ${{ env.DATE }}
+            - Luci应用: ${{ env.LUCI_APPS }}
+            
+            ## 文件说明
+            - *.bin: 固件文件
+            - ${{ env.CHIP_TYPE }}-config.tar.gz: 配置文件
+            - ${{ env.CHIP_TYPE }}-app.tar.gz: 软件包
+            - ${{ env.CHIP_TYPE }}-log.tar.gz: 编译日志
