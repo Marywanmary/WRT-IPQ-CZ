@@ -125,8 +125,6 @@ jobs:
           echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
           VERSION_INFO=$(git show -s --date=short --format="作者: %an<br/>时间: %cd<br/>内容: %s<br/>hash: %H")
           echo "VERSION_INFO=$VERSION_INFO" >> $GITHUB_ENV
-          VERSION_KERNEL=$(find ./dl -maxdepth 1 -name "linux-[4-6]\.*" | sort -r | head -n 1 | grep -oE "[4-6]\.[0-9]{1,3}\.[0-9]{1,3}")
-          echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
           
           # GitHub Action 移除国内下载源
           PROJECT_MIRRORS_FILE="$PWD/scripts/projectsmirrors.json"
@@ -155,6 +153,14 @@ jobs:
           echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
           # 生成共享缓存key，不包含配置名称，以便不同配置间共享
           echo "SHARED_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}-${{ env.HASH }}" >> $GITHUB_ENV
+          
+          # 获取内核版本（在update.sh执行后dl目录应该存在）
+          if [ -d "./dl" ]; then
+            VERSION_KERNEL=$(find ./dl -maxdepth 1 -name "linux-[4-6]\.*" | sort -r | head -n 1 | grep -oE "[4-6]\.[0-9]{1,3}\.[0-9]{1,3}")
+            echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
+          else
+            echo "VERSION_KERNEL=unknown" >> $GITHUB_ENV
+          fi
 
       - name: 恢复工具链缓存
         if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
@@ -442,8 +448,6 @@ jobs:
           echo "OPENWRT_PATH=$PWD" >> $GITHUB_ENV
           VERSION_INFO=$(git show -s --date=short --format="作者: %an<br/>时间: %cd<br/>内容: %s<br/>hash: %H")
           echo "VERSION_INFO=$VERSION_INFO" >> $GITHUB_ENV
-          VERSION_KERNEL=$(find ./dl -maxdepth 1 -name "linux-[4-6]\.*" | sort -r | head -n 1 | grep -oE "[4-6]\.[0-9]{1,3}\.[0-9]{1,3}")
-          echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
           
           # GitHub Action 移除国内下载源
           PROJECT_MIRRORS_FILE="$PWD/scripts/projectsmirrors.json"
@@ -472,6 +476,14 @@ jobs:
           echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
           # 生成共享缓存key，不包含配置名称，以便不同配置间共享
           echo "SHARED_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}-${{ env.HASH }}" >> $GITHUB_ENV
+          
+          # 获取内核版本（在update.sh执行后dl目录应该存在）
+          if [ -d "./dl" ]; then
+            VERSION_KERNEL=$(find ./dl -maxdepth 1 -name "linux-[4-6]\.*" | sort -r | head -n 1 | grep -oE "[4-6]\.[0-9]{1,3}\.[0-9]{1,3}")
+            echo "VERSION_KERNEL=$VERSION_KERNEL" >> $GITHUB_ENV
+          else
+            echo "VERSION_KERNEL=unknown" >> $GITHUB_ENV
+          fi
 
       - name: 恢复工具链缓存
         if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
