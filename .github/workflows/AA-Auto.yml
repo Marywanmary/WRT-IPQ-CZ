@@ -158,24 +158,23 @@ jobs:
           echo "HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
           echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
           
-          # 分层缓存键
+          # 分层缓存键（不包含时间戳）
           echo "CHIP_CACHE_KEY=${{ env.CHIP_TYPE }}" >> $GITHUB_ENV
           echo "BRANCH_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}" >> $GITHUB_ENV
           echo "VERSION_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}-${{ env.HASH }}" >> $GITHUB_ENV
 
+      # 工具链阶段
       - name: 恢复工具链缓存
-        if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
+        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
           key: ${{ env.CHIP_CACHE_KEY }}-toolchain
-          restore-keys: |
-            ${{ env.CHIP_CACHE_KEY }}-toolchain-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
         continue-on-error: true
 
       - name: 检查工具链缓存
-        if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
+        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         run: |
           if [ ! -d "$OPENWRT_PATH/staging_dir/toolchain-arm_cortex-a53+neon-vfpv4_gcc-13.3.0_musl_eabi" ]; then
             echo "错误：工具链缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
@@ -183,7 +182,7 @@ jobs:
           fi
 
       - name: 编译工具链
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译工具链..."
@@ -191,22 +190,19 @@ jobs:
           echo "工具链编译完成"
 
       - name: 缓存工具链
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain'
         uses: actions/cache@main
         with:
-          key: ${{ env.CHIP_CACHE_KEY }}-toolchain ${{ env.CACHE_DATE }}
-          restore-keys: |
-            ${{ env.CHIP_CACHE_KEY }}-toolchain-
+          key: ${{ env.CHIP_CACHE_KEY }}-toolchain
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
 
+      # 依赖包阶段
       - name: 恢复依赖包缓存
         if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
           key: ${{ env.BRANCH_CACHE_KEY }}-packages
-          restore-keys: |
-            ${{ env.BRANCH_CACHE_KEY }}-packages-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -222,7 +218,7 @@ jobs:
           fi
 
       - name: 诊断编译环境
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
         run: |
           cd $OPENWRT_PATH
           echo "检查依赖包状态..."
@@ -234,19 +230,14 @@ jobs:
           df -h
 
       - name: 加载自定义配置
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
         run: |
           # 修改默认IP & 固件名称 & 编译署名
           sed -i 's/192.168.1.1/192.168.111.1/g' $OPENWRT_PATH/package/base-files/files/bin/config_generate
           sed -i "s/hostname='.*'/hostname='WRT'/g" $OPENWRT_PATH/package/base-files/files/bin/config_generate
-          # 注释掉可能导致错误的行
-          # sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" $OPENWRT_PATH/feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
 
           # 修改管理员密码和无线密码为空
           sed -i 's/root:::0:0:99999:7:::/root:$1$Vt0N2QhY$T8mXfJ7gJf9L7P6F5b4D8.:18232:0:99999:7:::/g' $OPENWRT_PATH/package/base-files/files/etc/shadow
-          # 注释掉可能导致错误的行
-          # sed -i "s/option encryption 'psk2'/option encryption 'none'/g" $OPENWRT_PATH/package/kernel/mac80211/files/lib/wifi/mac80211.sh
-          # sed -i "s/option key '12345678'/option key ''/g" $OPENWRT_PATH/package/kernel/mac80211/files/lib/wifi/mac80211.sh
 
           # 安全移除要替换的包（先检查是否存在）
           [ -d "$OPENWRT_PATH/feeds/luci/applications/luci-app-appfilter" ] && rm -rf $OPENWRT_PATH/feeds/luci/applications/luci-app-appfilter
@@ -309,14 +300,14 @@ jobs:
           git clone --depth=1 https://github.com/vernesong/OpenClash $OPENWRT_PATH/package/OpenClash
 
           # ====== 添加kenzok8软件源并且让它的优先级最低，也就是如果有软件包冲突，它的软件包会被其它软件源替代。 ======
-          git clone --depth=1 https://github.com/ $OPENWRT_PATH/small8
+          git clone small8 https://github.com/kenzok8/small-package
 
           cd $OPENWRT_PATH
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
       - name: 检查PHP相关包配置
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
         run: |
           cd $OPENWRT_PATH
           echo "检查配置文件中可能引起问题的PHP相关配置..."
@@ -335,7 +326,7 @@ jobs:
           make defconfig > /dev/null 2>&1
 
       - name: 编译依赖包
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译依赖包..."
@@ -347,24 +338,21 @@ jobs:
           echo "依赖包编译完成"
 
       - name: 缓存依赖包
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
         uses: actions/cache@main
         with:
-          key: ${{ env.BRANCH_CACHE_KEY }}-packages ${{ env.CACHE_DATE }}
-          restore-keys: |
-            ${{ env.BRANCH_CACHE_KEY }}-packages-
+          key: ${{ env.BRANCH_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
 
+      # 内核阶段
       - name: 恢复内核缓存
         if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
           key: ${{ env.BRANCH_CACHE_KEY }}-kernel
-          restore-keys: |
-            ${{ env.BRANCH_CACHE_KEY }}-kernel-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
         continue-on-error: true
@@ -378,7 +366,7 @@ jobs:
           fi
 
       - name: 编译内核
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译内核..."
@@ -386,22 +374,19 @@ jobs:
           echo "内核编译完成"
 
       - name: 缓存内核
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel'
         uses: actions/cache@main
         with:
-          key: ${{ env.BRANCH_CACHE_KEY }}-kernel ${{ env.CACHE_DATE }}
-          restore-keys: |
-            ${{ env.BRANCH_CACHE_KEY }}-kernel-
+          key: ${{ env.BRANCH_CACHE_KEY }}-kernel
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
 
+      # 基础系统阶段
       - name: 恢复基础系统缓存
         if: github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
           key: ${{ env.VERSION_CACHE_KEY }}-base
-          restore-keys: |
-            ${{ env.VERSION_CACHE_KEY }}-base-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
         continue-on-error: true
@@ -415,7 +400,7 @@ jobs:
           fi
 
       - name: 编译基础系统
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译基础系统..."
@@ -424,17 +409,16 @@ jobs:
           echo "基础系统编译完成"
 
       - name: 缓存基础系统
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base'
         uses: actions/cache@main
         with:
-          key: ${{ env.VERSION_CACHE_KEY }}-base ${{ env.CACHE_DATE }}
-          restore-keys: |
-            ${{ env.VERSION_CACHE_KEY }}-base-
+          key: ${{ env.VERSION_CACHE_KEY }}-base
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
 
+      # 软件包编译和生成固件阶段（始终执行到最后）
       - name: 编译软件包并生成固件
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         id: compile
         run: |
           cd $OPENWRT_PATH
@@ -597,24 +581,23 @@ jobs:
           echo "HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
           echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
           
-          # 分层缓存键
+          # 分层缓存键（不包含时间戳）
           echo "CHIP_CACHE_KEY=${{ env.CHIP_TYPE }}" >> $GITHUB_ENV
           echo "BRANCH_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}" >> $GITHUB_ENV
           echo "VERSION_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}-${{ env.HASH }}" >> $GITHUB_ENV
 
+      # 工具链阶段
       - name: 恢复工具链缓存
-        if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
+        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
           key: ${{ env.CHIP_CACHE_KEY }}-toolchain
-          restore-keys: |
-            ${{ env.CHIP_CACHE_KEY }}-toolchain-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
         continue-on-error: true
 
       - name: 检查工具链缓存
-        if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
+        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         run: |
           if [ ! -d "$OPENWRT_PATH/staging_dir/toolchain-arm_cortex-a53+neon-vfpv4_gcc-13.3.0_musl_eabi" ]; then
             echo "错误：工具链缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
@@ -622,7 +605,7 @@ jobs:
           fi
 
       - name: 编译工具链
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译工具链..."
@@ -630,22 +613,19 @@ jobs:
           echo "工具链编译完成"
 
       - name: 缓存工具链
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain'
         uses: actions/cache@main
         with:
-          key: ${{ env.CHIP_CACHE_KEY }}-toolchain ${{ env.CACHE_DATE }}
-          restore-keys: |
-            ${{ env.CHIP_CACHE_KEY }}-toolchain-
+          key: ${{ env.CHIP_CACHE_KEY }}-toolchain
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
 
+      # 依赖包阶段
       - name: 恢复依赖包缓存
         if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
           key: ${{ env.BRANCH_CACHE_KEY }}-packages
-          restore-keys: |
-            ${{ env.BRANCH_CACHE_KEY }}-packages-
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -661,7 +641,7 @@ jobs:
           fi
 
       - name: 诊断编译环境
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
         run: |
           cd $OPENWRT_PATH
           echo "检查依赖包状态..."
@@ -673,19 +653,14 @@ jobs:
           df -h
 
       - name: 加载自定义配置
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
         run: |
           # 修改默认IP & 固件名称 & 编译署名
           sed -i 's/192.168.1.1/192.168.111.1/g' $OPENWRT_PATH/package/base-files/files/bin/config_generate
           sed -i "s/hostname='.*'/hostname='WRT'/g" $OPENWRT_PATH/package/base-files/files/bin/config_generate
-          # 注释掉可能导致错误的行
-          # sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Mary')/g" $OPENWRT_PATH/feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
 
           # 修改管理员密码和无线密码为空
           sed -i 's/root:::0:0:99999:7:::/root:$1$Vt0N2QhY$T8mXfJ7gJf9L7P6F5b4D8.:18232:0:99999:7:::/g' $OPENWRT_PATH/package/base-files/files/etc/shadow
-          # 注释掉可能导致错误的行
-          # sed -i "s/option encryption 'psk2'/option encryption 'none'/g" $OPENWRT_PATH/package/kernel/mac80211/files/lib/wifi/mac80211.sh
-          # sed -i "s/option key '12345678'/option key ''/g" $OPENWRT_PATH/package/kernel/mac80211/files/lib/wifi/mac80211.sh
 
           # 安全移除要替换的包（先检查是否存在）
           [ -d "$OPENWRT_PATH/feeds/luci/applications/luci-app-appfilter" ] && rm -rf $OPENWRT_PATH/feeds/luci/applications/luci-app-appfilter
@@ -755,7 +730,7 @@ jobs:
           ./scripts/feeds install -a
 
       - name: 检查PHP相关包配置
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
         run: |
           cd $OPENWRT_PATH
           echo "检查配置文件中可能引起问题的PHP相关配置..."
@@ -774,7 +749,7 @@ jobs:
           make defconfig > /dev/null 2>&1
 
       - name: 编译依赖包
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译依赖包..."
@@ -786,24 +761,21 @@ jobs:
           echo "依赖包编译完成"
 
       - name: 缓存依赖包
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
         uses: actions/cache@main
         with:
-          key: ${{ env.BRANCH_CACHE_KEY }}-packages ${{ env.CACHE_DATE }}
-          restore-keys: |
-            ${{ env.BRANCH_CACHE_KEY }}-packages-
+          key: ${{ env.BRANCH_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
 
+      # 内核阶段
       - name: 恢复内核缓存
         if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
           key: ${{ env.BRANCH_CACHE_KEY }}-kernel
-          restore-keys: |
-            ${{ env.BRANCH_CACHE_KEY }}-kernel-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
         continue-on-error: true
@@ -817,7 +789,7 @@ jobs:
           fi
 
       - name: 编译内核
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译内核..."
@@ -825,22 +797,19 @@ jobs:
           echo "内核编译完成"
 
       - name: 缓存内核
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel'
         uses: actions/cache@main
         with:
-          key: ${{ env.BRANCH_CACHE_KEY }}-kernel ${{ env.CACHE_DATE }}
-          restore-keys: |
-            ${{ env.BRANCH_CACHE_KEY }}-kernel-
+          key: ${{ env.BRANCH_CACHE_KEY }}-kernel
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
 
+      # 基础系统阶段
       - name: 恢复基础系统缓存
         if: github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
           key: ${{ env.VERSION_CACHE_KEY }}-base
-          restore-keys: |
-            ${{ env.VERSION_CACHE_KEY }}-base-
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
         continue-on-error: true
@@ -854,7 +823,7 @@ jobs:
           fi
 
       - name: 编译基础系统
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译基础系统..."
@@ -863,17 +832,16 @@ jobs:
           echo "基础系统编译完成"
 
       - name: 缓存基础系统
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base'
         uses: actions/cache@main
         with:
-          key: ${{ env.VERSION_CACHE_KEY }}-base ${{ env.CACHE_DATE }}
-          restore-keys: |
-            ${{ env.VERSION_CACHE_KEY }}-base-
+          key: ${{ env.VERSION_CACHE_KEY }}-base
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
 
+      # 软件包编译和生成固件阶段（始终执行到最后）
       - name: 编译软件包并生成固件
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk' || github.event.inputs.start_stage == 'full'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         id: compile
         run: |
           cd $OPENWRT_PATH
