@@ -135,8 +135,8 @@ jobs:
       - name: 更新源代码和配置
         run: |
           cd $OPENWRT_PATH
-          # 调用update.sh脚本
-          $GITHUB_WORKSPACE/update.sh "${{ matrix.branch_url }}" "${{ matrix.branch_ref }}" "$OPENWRT_PATH" "none"
+          # 调用update.sh脚本（使用正确的路径）
+          $GITHUB_WORKSPACE/scripts/update.sh "${{ matrix.branch_url }}" "${{ matrix.branch_ref }}" "$OPENWRT_PATH" "none"
           
           # 合并配置文件：芯片基础配置 + 分支基础配置 + 软件包配置
           cat $GITHUB_WORKSPACE/${{ env.CHIP_BASE_FILE }} $GITHUB_WORKSPACE/${{ matrix.branch_config }} $GITHUB_WORKSPACE/${{ matrix.pkg_config }} > $OPENWRT_PATH/.config
@@ -292,7 +292,7 @@ jobs:
       - name: 检查基础系统缓存
         if: github.event.inputs.start_stage == 'ipk'
         run: |
-          if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-"* ]; then
+          if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpf4_musl_eabi/root-"* ]; then
             echo "错误：基础系统缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
             exit 1
           fi
@@ -458,8 +458,8 @@ jobs:
       - name: 更新源代码和配置
         run: |
           cd $OPENWRT_PATH
-          # 调用update.sh脚本
-          $GITHUB_WORKSPACE/update.sh "${{ matrix.branch_url }}" "${{ matrix.branch_ref }}" "$OPENWRT_PATH" "none"
+          # 调用update.sh脚本（使用正确的路径）
+          $GITHUB_WORKSPACE/scripts/update.sh "${{ matrix.branch_url }}" "${{ matrix.branch_ref }}" "$OPENWRT_PATH" "none"
           
           # 合并配置文件：芯片基础配置 + 分支基础配置 + 软件包配置
           cat $GITHUB_WORKSPACE/${{ env.CHIP_BASE_FILE }} $GITHUB_WORKSPACE/${{ matrix.branch_config }} $GITHUB_WORKSPACE/${{ matrix.pkg_config }} > $OPENWRT_PATH/.config
