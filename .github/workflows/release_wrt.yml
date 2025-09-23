@@ -201,7 +201,7 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@v4
         with:
-          key: ${{ env.STABLE_CACHE_KEY }}-toolchain-${{ env.CACHE_DATE }}
+          key: ${{ env.STABLE_CACHE_KEY }}-toolchain
           restore-keys: |
             ${{ env.STABLE_CACHE_KEY }}-toolchain
           path: |
@@ -241,7 +241,7 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@v4
         with:
-          key: ${{ env.PRECISE_CACHE_KEY }}-packages-${{ env.CACHE_DATE }}
+          key: ${{ env.PRECISE_CACHE_KEY }}-packages
           restore-keys: |
             ${{ env.PRECISE_CACHE_KEY }}-packages
           path: |
@@ -280,7 +280,7 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@v4
         with:
-          key: ${{ env.STABLE_CACHE_KEY }}-kernel-${{ env.CACHE_DATE }}
+          key: ${{ env.STABLE_CACHE_KEY }}-kernel
           restore-keys: |
             ${{ env.STABLE_CACHE_KEY }}-kernel
           path: |
@@ -318,7 +318,7 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@v4
         with:
-          key: ${{ env.PRECISE_CACHE_KEY }}-base-${{ env.CACHE_DATE }}
+          key: ${{ env.PRECISE_CACHE_KEY }}-base
           restore-keys: |
             ${{ env.PRECISE_CACHE_KEY }}-base
           path: |
@@ -503,7 +503,7 @@ jobs:
         with:
           key: ${{ env.SHARED_CACHE_KEY }}-toolchain
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-toolchain-
+            ${{ env.SHARED_CACHE_KEY }}-toolchain
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
         continue-on-error: true
@@ -528,9 +528,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@v4
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-toolchain ${{ env.CACHE_DATE }}
+          key: ${{ env.SHARED_CACHE_KEY }}-toolchain
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-toolchain-
+            ${{ env.SHARED_CACHE_KEY }}-toolchain
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
 
@@ -540,7 +540,7 @@ jobs:
         with:
           key: ${{ env.SHARED_CACHE_KEY }}-packages
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-packages-
+            ${{ env.SHARED_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -568,9 +568,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@v4
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-packages ${{ env.CACHE_DATE }}
+          key: ${{ env.SHARED_CACHE_KEY }}-packages
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-packages-
+            ${{ env.SHARED_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -582,7 +582,7 @@ jobs:
         with:
           key: ${{ env.SHARED_CACHE_KEY }}-kernel
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-kernel-
+            ${{ env.SHARED_CACHE_KEY }}-kernel
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
         continue-on-error: true
@@ -607,9 +607,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@v4
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-kernel ${{ env.CACHE_DATE }}
+          key: ${{ env.SHARED_CACHE_KEY }}-kernel
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-kernel-
+            ${{ env.SHARED_CACHE_KEY }}-kernel
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
 
@@ -619,7 +619,7 @@ jobs:
         with:
           key: ${{ env.SHARED_CACHE_KEY }}-base
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-base-
+            ${{ env.SHARED_CACHE_KEY }}-base
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
         continue-on-error: true
@@ -645,9 +645,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@v4
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-base ${{ env.CACHE_DATE }}
+          key: ${{ env.SHARED_CACHE_KEY }}-base
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-base-
+            ${{ env.SHARED_CACHE_KEY }}-base
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
 
