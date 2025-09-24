@@ -159,8 +159,10 @@ jobs:
           # 生成智能缓存Key
           STABLE_CACHE_KEY="${{ env.CHIP_TYPE }}-${{ matrix.branch_name }}-${{ matrix.branch_ref }}"
           PRECISE_CACHE_KEY="${{ env.CHIP_TYPE }}-${{ matrix.branch_name }}-${{ matrix.branch_ref }}-${HASH}"
+          SHARED_CACHE_KEY="${{ env.CHIP_TYPE }}-${{ matrix.branch_name }}-${{ matrix.branch_ref }}"
           echo "STABLE_CACHE_KEY=$STABLE_CACHE_KEY" >> $GITHUB_ENV
           echo "PRECISE_CACHE_KEY=$PRECISE_CACHE_KEY" >> $GITHUB_ENV
+          echo "SHARED_CACHE_KEY=$SHARED_CACHE_KEY" >> $GITHUB_ENV
           
           # 获取内核版本（在update.sh执行后dl目录应该存在）
           if [ -d "./dl" ]; then
@@ -208,7 +210,7 @@ jobs:
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
 
       - name: 恢复内核缓存
-        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@v4
         with:
           key: ${{ env.STABLE_CACHE_KEY }}-kernel
@@ -219,7 +221,7 @@ jobs:
         continue-on-error: true
 
       - name: 检查内核缓存
-        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         run: |
           if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-"* ]; then
             echo "错误：内核缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
@@ -484,10 +486,17 @@ jobs:
           echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
           DEVICE_TARGET=$(cat .config | grep CONFIG_TARGET_BOARD | awk -F '\"' '{print $2}')
           echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
-          echo "HASH=$(git log -1 --pretty=format:'%h')" >> $GITHUB_ENV
+          HASH=$(git log -1 --pretty=format:'%h')
+          echo "HASH=$HASH" >> $GITHUB_ENV
           echo "CACHE_DATE=$(date +"%Y-%m-%d %H:%M:%S")" >> $GITHUB_ENV
-          # 生成共享缓存key，不包含配置名称，以便不同配置间共享
-          echo "SHARED_CACHE_KEY=${{ env.CHIP_TYPE }}-${{ env.SOURCE_REPO }}-${{ env.HASH }}" >> $GITHUB_ENV
+          
+          # 生成智能缓存Key - 与build-ultra保持一致
+          STABLE_CACHE_KEY="${{ env.CHIP_TYPE }}-${{ matrix.branch_name }}-${{ matrix.branch_ref }}"
+          PRECISE_CACHE_KEY="${{ env.CHIP_TYPE }}-${{ matrix.branch_name }}-${{ matrix.branch_ref }}-${HASH}"
+          SHARED_CACHE_KEY="${{ env.CHIP_TYPE }}-${{ matrix.branch_name }}-${{ matrix.branch_ref }}"
+          echo "STABLE_CACHE_KEY=$STABLE_CACHE_KEY" >> $GITHUB_ENV
+          echo "PRECISE_CACHE_KEY=$PRECISE_CACHE_KEY" >> $GITHUB_ENV
+          echo "SHARED_CACHE_KEY=$SHARED_CACHE_KEY" >> $GITHUB_ENV
           
           # 获取内核版本（在update.sh执行后dl目录应该存在）
           if [ -d "./dl" ]; then
@@ -501,9 +510,9 @@ jobs:
         if: github.event.inputs.start_stage != 'toolchain' && github.event.inputs.start_stage != 'full'
         uses: actions/cache@v4
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-toolchain
+          key: ${{ env.STABLE_CACHE_KEY }}-toolchain
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-toolchain
+            ${{ env.STABLE_CACHE_KEY }}-toolchain
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
         continue-on-error: true
@@ -528,25 +537,25 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@v4
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-toolchain
+          key: ${{ env.STABLE_CACHE_KEY }}-toolchain
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-toolchain
+            ${{ env.STABLE_CACHE_KEY }}-toolchain
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
 
       - name: 恢复内核缓存
-        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@v4
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-kernel
+          key: ${{ env.STABLE_CACHE_KEY }}-kernel
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-kernel
+            ${{ env.STABLE_CACHE_KEY }}-kernel
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
         continue-on-error: true
 
       - name: 检查内核缓存
-        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         run: |
           if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-"* ]; then
             echo "错误：内核缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
@@ -566,9 +575,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@v4
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-kernel
+          key: ${{ env.STABLE_CACHE_KEY }}-kernel
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-kernel
+            ${{ env.STABLE_CACHE_KEY }}-kernel
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
 
@@ -576,9 +585,9 @@ jobs:
         if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@v4
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-packages
+          key: ${{ env.PRECISE_CACHE_KEY }}-packages
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-packages
+            ${{ env.PRECISE_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -606,9 +615,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@v4
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-packages
+          key: ${{ env.PRECISE_CACHE_KEY }}-packages
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-packages
+            ${{ env.PRECISE_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -618,9 +627,9 @@ jobs:
         if: github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@v4
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-base
+          key: ${{ env.PRECISE_CACHE_KEY }}-base
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-base
+            ${{ env.PRECISE_CACHE_KEY }}-base
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
         continue-on-error: true
@@ -645,9 +654,9 @@ jobs:
         if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'full'
         uses: actions/cache@v4
         with:
-          key: ${{ env.SHARED_CACHE_KEY }}-base
+          key: ${{ env.PRECISE_CACHE_KEY }}-base
           restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-base
+            ${{ env.PRECISE_CACHE_KEY }}-base
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
 
