@@ -349,16 +349,21 @@ update_tcping() {
 }
 set_custom_task() {
     local sh_dir="$BUILD_DIR/package/base-files/files/etc/init.d"
-    cat <<'EOF' >"$sh_dir/custom_task"
+    # 使用 cat 命令和 Here Document 创建 custom_task 脚本
+    # 注意：Here Document 的结束标记 EOF 必须顶格，且前后不能有任何空格或字符
+    cat <<'EOF' > "$sh_dir/custom_task"
 #!/bin/sh /etc/rc.common
 # 设置启动优先级
 START=99
+
 boot() {
     # 重新添加缓存请求定时任务
     sed -i '/drop_caches/d' /etc/crontabs/root
     echo "15 3 * * * sync && echo 3 > /proc/sys/vm/drop_caches" >>/etc/crontabs/root
+
     # 删除现有的 wireguard_watchdog 任务
     sed -i '/wireguard_watchdog/d' /etc/crontabs/root
+
     # 获取 WireGuard 接口名称
     local wg_ifname=$(wg show | awk '/interface/ {print $2}')
     if [ -n "$wg_ifname" ]; then
@@ -368,10 +373,12 @@ boot() {
         uci commit system
         /etc/init.d/cron restart
     fi
+
     # 应用新的 crontab 配置
     crontab /etc/crontabs/root
 }
 EOF
+    # 确保生成的脚本具有可执行权限
     chmod +x "$sh_dir/custom_task"
 }
 # 应用 Passwall 相关调整
