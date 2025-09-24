@@ -26,10 +26,10 @@ FEEDS_CONF="feeds.conf.default"
 GOLANG_REPO="https://github.com/sbwml/packages_lang_golang"
 GOLANG_BRANCH="25.x"
 THEME_SET="argon"
-LAN_ADDR="192.168.1.1"
+LAN_ADDR="192.168.111.1"  # 已修改为192.168.111.1
 
 clone_repo() {
-    if [[ ! -d $BUILD_DIR ]]; then
+    if [[ ! -d "$BUILD_DIR" ]]; then
         echo "克隆仓库: $REPO_URL 分支: $REPO_BRANCH"
         if ! git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$BUILD_DIR"; then
             echo "错误：克隆仓库 $REPO_URL 失败" >&2
@@ -57,7 +57,7 @@ reset_feeds_conf() {
     git reset --hard "origin/$REPO_BRANCH"
     git clean -f -d
     git pull
-    if [[ $COMMIT_HASH != "none" ]]; then
+    if [[ "$COMMIT_HASH" != "none" ]]; then
         git checkout "$COMMIT_HASH"
     fi
 }
@@ -77,13 +77,6 @@ update_feeds() {
     if [ ! -f "$BUILD_DIR/include/bpf.mk" ]; then
         touch "$BUILD_DIR/include/bpf.mk"
     fi
-
-    # 切换nss-packages源
-    # if grep -q "nss_packages" "$BUILD_DIR/$FEEDS_CONF"; then
-    #     sed -i '/nss_packages/d' "$BUILD_DIR/$FEEDS_CONF"
-    #     [ -z "$(tail -c 1 "$BUILD_DIR/$FEEDS_CONF")" ] || echo "" >>"$BUILD_DIR/$FEEDS_CONF"
-    #     echo "src-git nss_packages https://github.com/LiBwrt/nss-packages.git" >>"$BUILD_DIR/$FEEDS_CONF"
-    # fi
 
     # 更新 feeds
     ./scripts/feeds clean
@@ -113,40 +106,35 @@ remove_unwanted_packages() {
     )
 
     for pkg in "${luci_packages[@]}"; do
-        if [[ -d ./feeds/luci/applications/"$pkg" ]]; then
-            \rm -rf ./feeds/luci/applications/"$pkg"
+        if [[ -d ./feeds/luci/applications/$pkg ]]; then
+            \rm -rf ./feeds/luci/applications/$pkg
         fi
-        if [[ -d ./feeds/luci/themes/"$pkg" ]]; then
-            \rm -rf ./feeds/luci/themes/"$pkg"
+        if [[ -d ./feeds/luci/themes/$pkg ]]; then
+            \rm -rf ./feeds/luci/themes/$pkg
         fi
     done
 
     for pkg in "${packages_net[@]}"; do
-        if [[ -d ./feeds/packages/net/"$pkg" ]]; then
-            \rm -rf ./feeds/packages/net/"$pkg"
+        if [[ -d ./feeds/packages/net/$pkg ]]; then
+            \rm -rf ./feeds/packages/net/$pkg
         fi
     done
 
     for pkg in "${packages_utils[@]}"; do
-        if [[ -d ./feeds/packages/utils/"$pkg" ]]; then
-            \rm -rf ./feeds/packages/utils/"$pkg"
+        if [[ -d ./feeds/packages/utils/$pkg ]]; then
+            \rm -rf ./feeds/packages/utils/$pkg
         fi
     done
 
     for pkg in "${small8_packages[@]}"; do
-        if [[ -d ./feeds/small8/"$pkg" ]]; then
-            \rm -rf ./feeds/small8/"$pkg"
+        if [[ -d ./feeds/small8/$pkg ]]; then
+            \rm -rf ./feeds/small8/$pkg
         fi
     done
 
     if [[ -d ./package/istore ]]; then
         \rm -rf ./package/istore
     fi
-
-    # ipq60xx不支持NSS offload mnet_rx
-    # if grep -q "nss_packages" "$BUILD_DIR/$FEEDS_CONF"; then
-    #     rm -rf "$BUILD_DIR/feeds/nss_packages/wwan"
-    # fi
 
     # 临时放一下，清理脚本
     if [ -d "$BUILD_DIR/target/linux/qualcommax/base-files/etc/uci-defaults" ]; then
@@ -342,7 +330,7 @@ update_ath11k_fw() {
 }
 
 fix_mkpkg_format_invalid() {
-    if [[ $BUILD_DIR =~ "imm-nss" ]]; then
+    if [[ "$BUILD_DIR" =~ "imm-nss" ]]; then
         if [ -f "$BUILD_DIR/feeds/small8/v2ray-geodata/Makefile" ]; then
             sed -i 's/VER)-\$(PKG_RELEASE)/VER)-r\$(PKG_RELEASE)/g' "$BUILD_DIR/feeds/small8/v2ray-geodata/Makefile"
         fi
@@ -648,7 +636,7 @@ update_script_priority() {
 
     # 更新mosdns服务的启动顺序
     local mosdns_path="$BUILD_DIR/feeds/small8/luci-app-mosdns/root/etc/init.d/mosdns"
-    if [ -d "${mosdns_path%/*}" ] && [ -f "$mosdns_path" ]; then
+    if [ -f "$mosdns_path" ]; then
         sed -i 's/START=.*/START=94/g' "$mosdns_path"
     fi
 }
