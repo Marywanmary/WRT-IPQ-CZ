@@ -165,15 +165,19 @@ jobs:
 
       # 工具链阶段
       - name: 恢复工具链缓存
-        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        # 修复：总是尝试恢复工具链缓存，无论从哪个阶段开始
         uses: actions/cache@main
         with:
           key: ${{ env.CHIP_CACHE_KEY }}-toolchain
+          # 修复：移除多余的横杠，使用前缀匹配
+          restore-keys: |
+            ${{ env.CHIP_CACHE_KEY }}-toolchain
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
         continue-on-error: true
 
       - name: 检查工具链缓存
+        # 修复：只有在不需要编译工具链的阶段才检查缓存是否存在
         if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         run: |
           if [ ! -d "$OPENWRT_PATH/staging_dir/toolchain-arm_cortex-a53+neon-vfpv4_gcc-13.3.0_musl_eabi" ]; then
@@ -217,17 +221,24 @@ jobs:
           export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
           mkdir -p $TMPDIR
           
-          # 首先尝试并行编译
-          if ! make toolchain/install -j$(nproc); then
-            echo "并行编译失败，尝试单线程编译..."
-            make toolchain/install -j1 V=s
+          # 检查是否命中缓存
+          if [ -d "$OPENWRT_PATH/staging_dir/toolchain-arm_cortex-a53+neon-vfpv4_gcc-13.3.0_musl_eabi" ]; then
+            echo "工具链缓存命中，跳过编译"
+          else
+            echo "工具链缓存未命中，开始编译..."
+            # 首先尝试并行编译
+            if ! make toolchain/install -j$(nproc); then
+              echo "并行编译失败，尝试单线程编译..."
+              make toolchain/install -j1 V=s
+            fi
+            echo "工具链编译完成"
           fi
-          echo "工具链编译完成"
 
       - name: 缓存工具链
         if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain'
         uses: actions/cache@main
         with:
+          # 修复：移除时间戳，确保缓存键一致
           key: ${{ env.CHIP_CACHE_KEY }}-toolchain
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
@@ -238,6 +249,9 @@ jobs:
         uses: actions/cache@main
         with:
           key: ${{ env.BRANCH_CACHE_KEY }}-kernel
+          # 修复：移除多余的横杠，使用前缀匹配
+          restore-keys: |
+            ${{ env.BRANCH_CACHE_KEY }}-kernel
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-*/linux-*
         continue-on-error: true
@@ -272,13 +286,20 @@ jobs:
           export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
           mkdir -p $TMPDIR
           
-          make target/linux/compile -j$(nproc) || make target/linux/compile -j1 V=s
-          echo "内核编译完成"
+          # 检查是否命中缓存
+          if [ -d "$OPENWRT_PATH/build_dir/target-"*"/linux-"* ] && [ "$(ls -A $OPENWRT_PATH/build_dir/target-"*"/linux-"* 2>/dev/null)" ]; then
+            echo "内核缓存命中，跳过编译"
+          else
+            echo "内核缓存未命中，开始编译..."
+            make target/linux/compile -j$(nproc) || make target/linux/compile -j1 V=s
+            echo "内核编译完成"
+          fi
 
       - name: 缓存内核
         if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel'
         uses: actions/cache@main
         with:
+          # 修复：移除时间戳，确保缓存键一致
           key: ${{ env.BRANCH_CACHE_KEY }}-kernel
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-*/linux-*
@@ -289,6 +310,9 @@ jobs:
         uses: actions/cache@main
         with:
           key: ${{ env.BRANCH_CACHE_KEY }}-packages
+          # 修复：移除多余的横杠，使用前缀匹配
+          restore-keys: |
+            ${{ env.BRANCH_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -433,17 +457,24 @@ jobs:
           fi
           echo "找到内核配置文件: $KERNEL_CONFIG"
           
-          # 尝试编译，如果失败则输出更详细的错误信息
-          if ! make package/compile -j$(nproc); then
-            echo "编译依赖包失败，尝试单线程编译..."
-            make package/compile -j1 V=s
+          # 检查是否命中缓存
+          if [ -d "$OPENWRT_PATH/staging_dir/target-"* ] && [ "$(ls -A $OPENWRT_PATH/staging_dir/target-* 2>/dev/null)" ]; then
+            echo "依赖包缓存命中，跳过编译"
+          else
+            echo "依赖包缓存未命中，开始编译..."
+            # 尝试编译，如果失败则输出更详细的错误信息
+            if ! make package/compile -j$(nproc); then
+              echo "编译依赖包失败，尝试单线程编译..."
+              make package/compile -j1 V=s
+            fi
+            echo "依赖包编译完成"
           fi
-          echo "依赖包编译完成"
 
       - name: 缓存依赖包
         if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages'
         uses: actions/cache@main
         with:
+          # 修复：移除时间戳，确保缓存键一致
           key: ${{ env.BRANCH_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
@@ -456,6 +487,9 @@ jobs:
         uses: actions/cache@main
         with:
           key: ${{ env.VERSION_CACHE_KEY }}-base
+          # 修复：移除多余的横杠，使用前缀匹配
+          restore-keys: |
+            ${{ env.VERSION_CACHE_KEY }}-base
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-*/root-*
         continue-on-error: true
@@ -477,14 +511,21 @@ jobs:
           export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
           mkdir -p $TMPDIR
           
-          make target/linux/install -j$(nproc) || make target/linux/install -j1 V=s
-          make package/install -j$(nproc) || make package/install -j1 V=s
-          echo "基础系统编译完成"
+          # 检查是否命中缓存
+          if [ -d "$OPENWRT_PATH/build_dir/target-"*"/root-"* ] && [ "$(ls -A $OPENWRT_PATH/build_dir/target-"*"/root-"* 2>/dev/null)" ]; then
+            echo "基础系统缓存命中，跳过编译"
+          else
+            echo "基础系统缓存未命中，开始编译..."
+            make target/linux/install -j$(nproc) || make target/linux/install -j1 V=s
+            make package/install -j$(nproc) || make package/install -j1 V=s
+            echo "基础系统编译完成"
+          fi
 
       - name: 缓存基础系统
         if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base'
         uses: actions/cache@main
         with:
+          # 修复：移除时间戳，确保缓存键一致
           key: ${{ env.VERSION_CACHE_KEY }}-base
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-*/root-*
@@ -669,15 +710,19 @@ jobs:
 
       # 工具链阶段
       - name: 恢复工具链缓存
-        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        # 修复：总是尝试恢复工具链缓存，无论从哪个阶段开始
         uses: actions/cache@main
         with:
           key: ${{ env.CHIP_CACHE_KEY }}-toolchain
+          # 修复：移除多余的横杠，使用前缀匹配
+          restore-keys: |
+            ${{ env.CHIP_CACHE_KEY }}-toolchain
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
         continue-on-error: true
 
       - name: 检查工具链缓存
+        # 修复：只有在不需要编译工具链的阶段才检查缓存是否存在
         if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         run: |
           if [ ! -d "$OPENWRT_PATH/staging_dir/toolchain-arm_cortex-a53+neon-vfpv4_gcc-13.3.0_musl_eabi" ]; then
@@ -721,17 +766,24 @@ jobs:
           export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
           mkdir -p $TMPDIR
           
-          # 首先尝试并行编译
-          if ! make toolchain/install -j$(nproc); then
-            echo "并行编译失败，尝试单线程编译..."
-            make toolchain/install -j1 V=s
+          # 检查是否命中缓存
+          if [ -d "$OPENWRT_PATH/staging_dir/toolchain-arm_cortex-a53+neon-vfpv4_gcc-13.3.0_musl_eabi" ]; then
+            echo "工具链缓存命中，跳过编译"
+          else
+            echo "工具链缓存未命中，开始编译..."
+            # 首先尝试并行编译
+            if ! make toolchain/install -j$(nproc); then
+              echo "并行编译失败，尝试单线程编译..."
+              make toolchain/install -j1 V=s
+            fi
+            echo "工具链编译完成"
           fi
-          echo "工具链编译完成"
 
       - name: 缓存工具链
         if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain'
         uses: actions/cache@main
         with:
+          # 修复：移除时间戳，确保缓存键一致
           key: ${{ env.CHIP_CACHE_KEY }}-toolchain
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
@@ -742,6 +794,9 @@ jobs:
         uses: actions/cache@main
         with:
           key: ${{ env.BRANCH_CACHE_KEY }}-kernel
+          # 修复：移除多余的横杠，使用前缀匹配
+          restore-keys: |
+            ${{ env.BRANCH_CACHE_KEY }}-kernel
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-*/linux-*
         continue-on-error: true
@@ -776,13 +831,20 @@ jobs:
           export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
           mkdir -p $TMPDIR
           
-          make target/linux/compile -j$(nproc) || make target/linux/compile -j1 V=s
-          echo "内核编译完成"
+          # 检查是否命中缓存
+          if [ -d "$OPENWRT_PATH/build_dir/target-"*"/linux-"* ] && [ "$(ls -A $OPENWRT_PATH/build_dir/target-"*"/linux-"* 2>/dev/null)" ]; then
+            echo "内核缓存命中，跳过编译"
+          else
+            echo "内核缓存未命中，开始编译..."
+            make target/linux/compile -j$(nproc) || make target/linux/compile -j1 V=s
+            echo "内核编译完成"
+          fi
 
       - name: 缓存内核
         if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel'
         uses: actions/cache@main
         with:
+          # 修复：移除时间戳，确保缓存键一致
           key: ${{ env.BRANCH_CACHE_KEY }}-kernel
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-*/linux-*
@@ -793,6 +855,9 @@ jobs:
         uses: actions/cache@main
         with:
           key: ${{ env.BRANCH_CACHE_KEY }}-packages
+          # 修复：移除多余的横杠，使用前缀匹配
+          restore-keys: |
+            ${{ env.BRANCH_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
@@ -937,17 +1002,24 @@ jobs:
           fi
           echo "找到内核配置文件: $KERNEL_CONFIG"
           
-          # 尝试编译，如果失败则输出更详细的错误信息
-          if ! make package/compile -j$(nproc); then
-            echo "编译依赖包失败，尝试单线程编译..."
-            make package/compile -j1 V=s
+          # 检查是否命中缓存
+          if [ -d "$OPENWRT_PATH/staging_dir/target-"* ] && [ "$(ls -A $OPENWRT_PATH/staging_dir/target-* 2>/dev/null)" ]; then
+            echo "依赖包缓存命中，跳过编译"
+          else
+            echo "依赖包缓存未命中，开始编译..."
+            # 尝试编译，如果失败则输出更详细的错误信息
+            if ! make package/compile -j$(nproc); then
+              echo "编译依赖包失败，尝试单线程编译..."
+              make package/compile -j1 V=s
+            fi
+            echo "依赖包编译完成"
           fi
-          echo "依赖包编译完成"
 
       - name: 缓存依赖包
         if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages'
         uses: actions/cache@main
         with:
+          # 修复：移除时间戳，确保缓存键一致
           key: ${{ env.BRANCH_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
@@ -960,6 +1032,9 @@ jobs:
         uses: actions/cache@main
         with:
           key: ${{ env.VERSION_CACHE_KEY }}-base
+          # 修复：移除多余的横杠，使用前缀匹配
+          restore-keys: |
+            ${{ env.VERSION_CACHE_KEY }}-base
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-*/root-*
         continue-on-error: true
@@ -981,14 +1056,21 @@ jobs:
           export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
           mkdir -p $TMPDIR
           
-          make target/linux/install -j$(nproc) || make target/linux/install -j1 V=s
-          make package/install -j$(nproc) || make package/install -j1 V=s
-          echo "基础系统编译完成"
+          # 检查是否命中缓存
+          if [ -d "$OPENWRT_PATH/build_dir/target-"*"/root-"* ] && [ "$(ls -A $OPENWRT_PATH/build_dir/target-"*"/root-"* 2>/dev/null)" ]; then
+            echo "基础系统缓存命中，跳过编译"
+          else
+            echo "基础系统缓存未命中，开始编译..."
+            make target/linux/install -j$(nproc) || make target/linux/install -j1 V=s
+            make package/install -j$(nproc) || make package/install -j1 V=s
+            echo "基础系统编译完成"
+          fi
 
       - name: 缓存基础系统
         if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base'
         uses: actions/cache@main
         with:
+          # 修复：移除时间戳，确保缓存键一致
           key: ${{ env.VERSION_CACHE_KEY }}-base
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-*/root-*
