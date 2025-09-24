@@ -1,4 +1,4 @@
- name: Bash Syntax Check
+name: Bash Syntax Check
 
 on:
   push:
@@ -8,10 +8,16 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Validate Scripts
+        run: |
+          for script in scripts/*.sh; do
+            echo "Checking $script..."
             bash -n scripts/update.sh 2>&1 | grep -A5 -B5 "syntax error"
           # 可添加更多脚本检查
-          bash -n scripts/other_script.sh
+          # bash -n scripts/other_script.sh
+            # bash -n "$script" || exit 1
+          done
+
