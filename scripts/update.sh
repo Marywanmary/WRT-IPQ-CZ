@@ -26,7 +26,7 @@ FEEDS_CONF="feeds.conf.default"
 GOLANG_REPO="https://github.com/sbwml/packages_lang_golang"
 GOLANG_BRANCH="25.x"
 THEME_SET="argon"
-LAN_ADDR="192.168.111.1"  # 已修改为192.168.111.1
+LAN_ADDR="192.168.111.1"
 
 clone_repo() {
     if [[ ! -d "$BUILD_DIR" ]]; then
@@ -106,29 +106,29 @@ remove_unwanted_packages() {
     )
 
     for pkg in "${luci_packages[@]}"; do
-        if [[ -d ./feeds/luci/applications/$pkg ]]; then
-            \rm -rf ./feeds/luci/applications/$pkg
+        if [[ -d "./feeds/luci/applications/$pkg" ]]; then
+            \rm -rf "./feeds/luci/applications/$pkg"
         fi
-        if [[ -d ./feeds/luci/themes/$pkg ]]; then
-            \rm -rf ./feeds/luci/themes/$pkg
+        if [[ -d "./feeds/luci/themes/$pkg" ]]; then
+            \rm -rf "./feeds/luci/themes/$pkg"
         fi
     done
 
     for pkg in "${packages_net[@]}"; do
-        if [[ -d ./feeds/packages/net/$pkg ]]; then
-            \rm -rf ./feeds/packages/net/$pkg
+        if [[ -d "./feeds/packages/net/$pkg" ]]; then
+            \rm -rf "./feeds/packages/net/$pkg"
         fi
     done
 
     for pkg in "${packages_utils[@]}"; do
-        if [[ -d ./feeds/packages/utils/$pkg ]]; then
-            \rm -rf ./feeds/packages/utils/$pkg
+        if [[ -d "./feeds/packages/utils/$pkg" ]]; then
+            \rm -rf "./feeds/packages/utils/$pkg"
         fi
     done
 
     for pkg in "${small8_packages[@]}"; do
-        if [[ -d ./feeds/small8/$pkg ]]; then
-            \rm -rf ./feeds/small8/$pkg
+        if [[ -d "./feeds/small8/$pkg" ]]; then
+            \rm -rf "./feeds/small8/$pkg"
         fi
     done
 
@@ -733,7 +733,7 @@ fix_easytier() {
 }
 
 update_geoip() {
-    local geodata_path="$BUILD_DIR/package/feeds/small8/v2ray-geodata/Makefile"
+    local geodata_path="$BUILD_DIR/feeds/small8/v2ray-geodata/Makefile"
     if [ -f "$geodata_path" ]; then
         local GEOIP_VER=$(awk -F"=" '/GEOIP_VER:=/ {print $NF}' "$geodata_path" | grep -oE "[0-9]{1,}")
         if [ -n "$GEOIP_VER" ]; then
