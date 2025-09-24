@@ -20,8 +20,8 @@ on:
         options:
           - full           # 完整编译（从工具链开始）
           - toolchain      # 工具链编译
-          - packages       # 依赖包编译
           - kernel         # 内核编译
+          - packages       # 依赖包编译
           - base           # 基础系统编译
           - ipk            # 软件包编译（包括IPK/APK）
   schedule:
@@ -165,7 +165,7 @@ jobs:
 
       # 工具链阶段
       - name: 恢复工具链缓存
-        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
           key: ${{ env.CHIP_CACHE_KEY }}-toolchain
@@ -174,7 +174,7 @@ jobs:
         continue-on-error: true
 
       - name: 检查工具链缓存
-        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         run: |
           if [ ! -d "$OPENWRT_PATH/staging_dir/toolchain-arm_cortex-a53+neon-vfpv4_gcc-13.3.0_musl_eabi" ]; then
             echo "错误：工具链缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
@@ -232,28 +232,79 @@ jobs:
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
 
+      # 内核阶段
+      - name: 恢复内核缓存
+        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        uses: actions/cache@main
+        with:
+          key: ${{ env.BRANCH_CACHE_KEY }}-kernel
+          path: |
+            ${{ env.OPENWRT_PATH }}/build_dir/target-*/linux-*
+        continue-on-error: true
+
+      - name: 检查内核缓存
+        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        run: |
+          if [ ! -d "$OPENWRT_PATH/build_dir/target-"*"/linux-"* ]; then
+            echo "错误：内核缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
+            exit 1
+          fi
+
+      - name: 生成内核配置
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel'
+        run: |
+          cd $OPENWRT_PATH
+          echo "生成内核配置..."
+          # 设置临时目录到有足够空间的分区
+          export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
+          mkdir -p $TMPDIR
+          
+          # 确保内核配置文件存在
+          make target/linux/prepare -j$(nproc) || make target/linux/prepare -j1 V=s
+          echo "内核配置生成完成"
+
+      - name: 编译内核
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel'
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译内核..."
+          # 设置临时目录到有足够空间的分区
+          export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
+          mkdir -p $TMPDIR
+          
+          make target/linux/compile -j$(nproc) || make target/linux/compile -j1 V=s
+          echo "内核编译完成"
+
+      - name: 缓存内核
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel'
+        uses: actions/cache@main
+        with:
+          key: ${{ env.BRANCH_CACHE_KEY }}-kernel
+          path: |
+            ${{ env.OPENWRT_PATH }}/build_dir/target-*/linux-*
+
       # 依赖包阶段
       - name: 恢复依赖包缓存
-        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
           key: ${{ env.BRANCH_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-*/package-*
         continue-on-error: true
 
       - name: 检查依赖包缓存
-        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         run: |
-          if [ ! -d "$OPENWRT_PATH/staging_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi" ]; then
+          if [ ! -d "$OPENWRT_PATH/staging_dir/target-"* ]; then
             echo "错误：依赖包缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
             exit 1
           fi
 
       - name: 诊断编译环境
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages'
         run: |
           cd $OPENWRT_PATH
           echo "检查依赖包状态..."
@@ -265,7 +316,7 @@ jobs:
           df -h
 
       - name: 加载自定义配置
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages'
         run: |
           # 修改默认IP & 固件名称 & 编译署名
           sed -i 's/192.168.1.1/192.168.111.1/g' $OPENWRT_PATH/package/base-files/files/bin/config_generate
@@ -335,14 +386,14 @@ jobs:
           git clone --depth=1 https://github.com/vernesong/OpenClash $OPENWRT_PATH/package/OpenClash
 
           # ====== 添加kenzok8软件源并且让它的优先级最低，也就是如果有软件包冲突，它的软件包会被其它软件源替代。 ======
-          git clone --depth=1 https://github.com/kenzok8/small-package $OPENWRT_PATH/small8
+          git clone small8 https://github.com/kenzok8/small-package
 
           cd $OPENWRT_PATH
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
       - name: 检查PHP相关包配置
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages'
         run: |
           cd $OPENWRT_PATH
           echo "检查配置文件中可能引起问题的PHP相关配置..."
@@ -361,13 +412,26 @@ jobs:
           make defconfig > /dev/null 2>&1
 
       - name: 编译依赖包
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译依赖包..."
           # 设置临时目录到有足够空间的分区
           export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
           mkdir -p $TMPDIR
+          
+          # 检查内核配置文件是否存在
+          KERNEL_CONFIG=$(find $OPENWRT_PATH/build_dir -name ".config" | grep linux)
+          if [ -z "$KERNEL_CONFIG" ]; then
+            echo "错误：未找到内核配置文件，尝试重新生成..."
+            make target/linux/prepare -j1 V=s
+            KERNEL_CONFIG=$(find $OPENWRT_PATH/build_dir -name ".config" | grep linux)
+            if [ -z "$KERNEL_CONFIG" ]; then
+              echo "错误：无法生成内核配置文件"
+              exit 1
+            fi
+          fi
+          echo "找到内核配置文件: $KERNEL_CONFIG"
           
           # 尝试编译，如果失败则输出更详细的错误信息
           if ! make package/compile -j$(nproc); then
@@ -377,52 +441,14 @@ jobs:
           echo "依赖包编译完成"
 
       - name: 缓存依赖包
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages'
         uses: actions/cache@main
         with:
           key: ${{ env.BRANCH_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
-
-      # 内核阶段
-      - name: 恢复内核缓存
-        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
-        uses: actions/cache@main
-        with:
-          key: ${{ env.BRANCH_CACHE_KEY }}-kernel
-          path: |
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
-        continue-on-error: true
-
-      - name: 检查内核缓存
-        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
-        run: |
-          if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-"* ]; then
-            echo "错误：内核缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
-            exit 1
-          fi
-
-      - name: 编译内核
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel'
-        run: |
-          cd $OPENWRT_PATH
-          echo "开始编译内核..."
-          # 设置临时目录到有足够空间的分区
-          export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
-          mkdir -p $TMPDIR
-          
-          make target/linux/compile -j$(nproc) || make target/linux/compile -j1 V=s
-          echo "内核编译完成"
-
-      - name: 缓存内核
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel'
-        uses: actions/cache@main
-        with:
-          key: ${{ env.BRANCH_CACHE_KEY }}-kernel
-          path: |
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-*/package-*
 
       # 基础系统阶段
       - name: 恢复基础系统缓存
@@ -431,19 +457,19 @@ jobs:
         with:
           key: ${{ env.VERSION_CACHE_KEY }}-base
           path: |
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-*/root-*
         continue-on-error: true
 
       - name: 检查基础系统缓存
         if: github.event.inputs.start_stage == 'ipk'
         run: |
-          if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-"* ]; then
+          if [ ! -d "$OPENWRT_PATH/build_dir/target-"*"/root-"* ]; then
             echo "错误：基础系统缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
             exit 1
           fi
 
       - name: 编译基础系统
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译基础系统..."
@@ -456,16 +482,16 @@ jobs:
           echo "基础系统编译完成"
 
       - name: 缓存基础系统
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base'
         uses: actions/cache@main
         with:
           key: ${{ env.VERSION_CACHE_KEY }}-base
           path: |
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-*/root-*
 
       # 软件包编译和生成固件阶段（始终执行到最后）
       - name: 编译软件包并生成固件
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         id: compile
         run: |
           cd $OPENWRT_PATH
@@ -643,7 +669,7 @@ jobs:
 
       # 工具链阶段
       - name: 恢复工具链缓存
-        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
           key: ${{ env.CHIP_CACHE_KEY }}-toolchain
@@ -652,7 +678,7 @@ jobs:
         continue-on-error: true
 
       - name: 检查工具链缓存
-        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         run: |
           if [ ! -d "$OPENWRT_PATH/staging_dir/toolchain-arm_cortex-a53+neon-vfpv4_gcc-13.3.0_musl_eabi" ]; then
             echo "错误：工具链缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
@@ -710,28 +736,79 @@ jobs:
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
 
+      # 内核阶段
+      - name: 恢复内核缓存
+        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        uses: actions/cache@main
+        with:
+          key: ${{ env.BRANCH_CACHE_KEY }}-kernel
+          path: |
+            ${{ env.OPENWRT_PATH }}/build_dir/target-*/linux-*
+        continue-on-error: true
+
+      - name: 检查内核缓存
+        if: github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        run: |
+          if [ ! -d "$OPENWRT_PATH/build_dir/target-"*"/linux-"* ]; then
+            echo "错误：内核缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
+            exit 1
+          fi
+
+      - name: 生成内核配置
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel'
+        run: |
+          cd $OPENWRT_PATH
+          echo "生成内核配置..."
+          # 设置临时目录到有足够空间的分区
+          export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
+          mkdir -p $TMPDIR
+          
+          # 确保内核配置文件存在
+          make target/linux/prepare -j$(nproc) || make target/linux/prepare -j1 V=s
+          echo "内核配置生成完成"
+
+      - name: 编译内核
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel'
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译内核..."
+          # 设置临时目录到有足够空间的分区
+          export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
+          mkdir -p $TMPDIR
+          
+          make target/linux/compile -j$(nproc) || make target/linux/compile -j1 V=s
+          echo "内核编译完成"
+
+      - name: 缓存内核
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel'
+        uses: actions/cache@main
+        with:
+          key: ${{ env.BRANCH_CACHE_KEY }}-kernel
+          path: |
+            ${{ env.OPENWRT_PATH }}/build_dir/target-*/linux-*
+
       # 依赖包阶段
       - name: 恢复依赖包缓存
-        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@main
         with:
           key: ${{ env.BRANCH_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-*/package-*
         continue-on-error: true
 
       - name: 检查依赖包缓存
-        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         run: |
-          if [ ! -d "$OPENWRT_PATH/staging_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi" ]; then
+          if [ ! -d "$OPENWRT_PATH/staging_dir/target-"* ]; then
             echo "错误：依赖包缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
             exit 1
           fi
 
       - name: 诊断编译环境
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages'
         run: |
           cd $OPENWRT_PATH
           echo "检查依赖包状态..."
@@ -743,7 +820,7 @@ jobs:
           df -h
 
       - name: 加载自定义配置
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages'
         run: |
           # 修改默认IP & 固件名称 & 编译署名
           sed -i 's/192.168.1.1/192.168.111.1/g' $OPENWRT_PATH/package/base-files/files/bin/config_generate
@@ -813,14 +890,14 @@ jobs:
           git clone --depth=1 https://github.com/vernesong/OpenClash $OPENWRT_PATH/package/OpenClash
 
           # ====== 添加kenzok8软件源并且让它的优先级最低，也就是如果有软件包冲突，它的软件包会被其它软件源替代。 ======
-          git clone --depth=1 https://github.com/kenzok8/small-package $OPENWRT_PATH/small8
+          git clone small8 https://github.com/kenzok8/small-package
 
           cd $OPENWRT_PATH
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
       - name: 检查PHP相关包配置
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages'
         run: |
           cd $OPENWRT_PATH
           echo "检查配置文件中可能引起问题的PHP相关配置..."
@@ -839,13 +916,26 @@ jobs:
           make defconfig > /dev/null 2>&1
 
       - name: 编译依赖包
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译依赖包..."
           # 设置临时目录到有足够空间的分区
           export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
           mkdir -p $TMPDIR
+          
+          # 检查内核配置文件是否存在
+          KERNEL_CONFIG=$(find $OPENWRT_PATH/build_dir -name ".config" | grep linux)
+          if [ -z "$KERNEL_CONFIG" ]; then
+            echo "错误：未找到内核配置文件，尝试重新生成..."
+            make target/linux/prepare -j1 V=s
+            KERNEL_CONFIG=$(find $OPENWRT_PATH/build_dir -name ".config" | grep linux)
+            if [ -z "$KERNEL_CONFIG" ]; then
+              echo "错误：无法生成内核配置文件"
+              exit 1
+            fi
+          fi
+          echo "找到内核配置文件: $KERNEL_CONFIG"
           
           # 尝试编译，如果失败则输出更详细的错误信息
           if ! make package/compile -j$(nproc); then
@@ -855,52 +945,14 @@ jobs:
           echo "依赖包编译完成"
 
       - name: 缓存依赖包
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages'
         uses: actions/cache@main
         with:
           key: ${{ env.BRANCH_CACHE_KEY }}-packages
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/target*
             ${{ env.OPENWRT_PATH }}/staging_dir/host*
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
-
-      # 内核阶段
-      - name: 恢复内核缓存
-        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
-        uses: actions/cache@main
-        with:
-          key: ${{ env.BRANCH_CACHE_KEY }}-kernel
-          path: |
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
-        continue-on-error: true
-
-      - name: 检查内核缓存
-        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
-        run: |
-          if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-"* ]; then
-            echo "错误：内核缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
-            exit 1
-          fi
-
-      - name: 编译内核
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel'
-        run: |
-          cd $OPENWRT_PATH
-          echo "开始编译内核..."
-          # 设置临时目录到有足够空间的分区
-          export TMPDIR=/mnt/${{ matrix.branch_name }}/tmp
-          mkdir -p $TMPDIR
-          
-          make target/linux/compile -j$(nproc) || make target/linux/compile -j1 V=s
-          echo "内核编译完成"
-
-      - name: 缓存内核
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel'
-        uses: actions/cache@main
-        with:
-          key: ${{ env.BRANCH_CACHE_KEY }}-kernel
-          path: |
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-*/package-*
 
       # 基础系统阶段
       - name: 恢复基础系统缓存
@@ -909,19 +961,19 @@ jobs:
         with:
           key: ${{ env.VERSION_CACHE_KEY }}-base
           path: |
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-*/root-*
         continue-on-error: true
 
       - name: 检查基础系统缓存
         if: github.event.inputs.start_stage == 'ipk'
         run: |
-          if [ ! -d "$OPENWRT_PATH/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-"* ]; then
+          if [ ! -d "$OPENWRT_PATH/build_dir/target-"*"/root-"* ]; then
             echo "错误：基础系统缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
             exit 1
           fi
 
       - name: 编译基础系统
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base'
         run: |
           cd $OPENWRT_PATH
           echo "开始编译基础系统..."
@@ -934,16 +986,16 @@ jobs:
           echo "基础系统编译完成"
 
       - name: 缓存基础系统
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base'
         uses: actions/cache@main
         with:
           key: ${{ env.VERSION_CACHE_KEY }}-base
           path: |
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/root-*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-*/root-*
 
       # 软件包编译和生成固件阶段（始终执行到最后）
       - name: 编译软件包并生成固件
-        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        if: github.event.inputs.start_stage == 'full' || github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         id: compile
         run: |
           cd $OPENWRT_PATH
