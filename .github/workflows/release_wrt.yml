@@ -207,48 +207,6 @@ jobs:
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
 
-      - name: 恢复依赖包缓存
-        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
-        uses: actions/cache@v4
-        with:
-          key: ${{ env.PRECISE_CACHE_KEY }}-packages
-          restore-keys: |
-            ${{ env.PRECISE_CACHE_KEY }}-packages
-          path: |
-            ${{ env.OPENWRT_PATH }}/staging_dir/target*
-            ${{ env.OPENWRT_PATH }}/staging_dir/host*
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
-        continue-on-error: true
-
-      - name: 检查依赖包缓存
-        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
-        run: |
-          if [ ! -d "$OPENWRT_PATH/staging_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi" ]; then
-            echo "错误：依赖包缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
-            exit 1
-          fi
-
-      - name: 编译依赖包
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
-        run: |
-          cd $OPENWRT_PATH
-          echo "开始编译依赖包..."
-          make download -j$(($(nproc) * 2))
-          make package/compile -j$(($(nproc) + 1)) || make package/compile -j1 V=s
-          echo "依赖包编译完成"
-
-      - name: 缓存依赖包
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
-        uses: actions/cache@v4
-        with:
-          key: ${{ env.PRECISE_CACHE_KEY }}-packages
-          restore-keys: |
-            ${{ env.PRECISE_CACHE_KEY }}-packages
-          path: |
-            ${{ env.OPENWRT_PATH }}/staging_dir/target*
-            ${{ env.OPENWRT_PATH }}/staging_dir/host*
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
-
       - name: 恢复内核缓存
         if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@v4
@@ -274,6 +232,7 @@ jobs:
           cd $OPENWRT_PATH
           echo "开始编译内核..."
           make target/linux/compile -j$(($(nproc) + 1)) || make target/linux/compile -j1 V=s
+          make target/linux/install -j$(($(nproc) + 1)) || make target/linux/install -j1 V=s
           echo "内核编译完成"
 
       - name: 缓存内核
@@ -285,6 +244,48 @@ jobs:
             ${{ env.STABLE_CACHE_KEY }}-kernel
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
+
+      - name: 恢复依赖包缓存
+        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.PRECISE_CACHE_KEY }}-packages
+          restore-keys: |
+            ${{ env.PRECISE_CACHE_KEY }}-packages
+          path: |
+            ${{ env.OPENWRT_PATH }}/staging_dir/target*
+            ${{ env.OPENWRT_PATH }}/staging_dir/host*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
+        continue-on-error: true
+
+      - name: 检查依赖包缓存
+        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        run: |
+          if [ ! -d "$OPENWRT_PATH/staging_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi" ]; then
+            echo "错误：依赖包缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
+            exit 1
+          fi
+
+      - name: 编译依赖包
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译依赖包..."
+          make download -j$(($(nproc) * 2))
+          make package/compile -j$(($(nproc) + 1)) || make package/compile -j1 V=s
+          echo "依赖包编译完成"
+
+      - name: 缓存依赖包
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.PRECISE_CACHE_KEY }}-packages
+          restore-keys: |
+            ${{ env.PRECISE_CACHE_KEY }}-packages
+          path: |
+            ${{ env.OPENWRT_PATH }}/staging_dir/target*
+            ${{ env.OPENWRT_PATH }}/staging_dir/host*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
 
       - name: 恢复基础系统缓存
         if: github.event.inputs.start_stage == 'ipk'
@@ -310,7 +311,6 @@ jobs:
         run: |
           cd $OPENWRT_PATH
           echo "开始编译基础系统..."
-          make target/linux/install -j$(($(nproc) + 1)) || make target/linux/install -j1 V=s
           make package/install -j$(($(nproc) + 1)) || make package/install -j1 V=s
           echo "基础系统编译完成"
 
@@ -534,48 +534,6 @@ jobs:
           path: |
             ${{ env.OPENWRT_PATH }}/staging_dir/toolchain*
 
-      - name: 恢复依赖包缓存
-        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
-        uses: actions/cache@v4
-        with:
-          key: ${{ env.SHARED_CACHE_KEY }}-packages
-          restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-packages
-          path: |
-            ${{ env.OPENWRT_PATH }}/staging_dir/target*
-            ${{ env.OPENWRT_PATH }}/staging_dir/host*
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
-        continue-on-error: true
-
-      - name: 检查依赖包缓存
-        if: github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
-        run: |
-          if [ ! -d "$OPENWRT_PATH/staging_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi" ]; then
-            echo "错误：依赖包缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
-            exit 1
-          fi
-
-      - name: 编译依赖包
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
-        run: |
-          cd $OPENWRT_PATH
-          echo "开始编译依赖包..."
-          make download -j$(($(nproc) * 2))
-          make package/compile -j$(($(nproc) + 1)) || make package/compile -j1 V=s
-          echo "依赖包编译完成"
-
-      - name: 缓存依赖包
-        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'full'
-        uses: actions/cache@v4
-        with:
-          key: ${{ env.SHARED_CACHE_KEY }}-packages
-          restore-keys: |
-            ${{ env.SHARED_CACHE_KEY }}-packages
-          path: |
-            ${{ env.OPENWRT_PATH }}/staging_dir/target*
-            ${{ env.OPENWRT_PATH }}/staging_dir/host*
-            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
-
       - name: 恢复内核缓存
         if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
         uses: actions/cache@v4
@@ -601,6 +559,7 @@ jobs:
           cd $OPENWRT_PATH
           echo "开始编译内核..."
           make target/linux/compile -j$(($(nproc) + 1)) || make target/linux/compile -j1 V=s
+          make target/linux/install -j$(($(nproc) + 1)) || make target/linux/install -j1 V=s
           echo "内核编译完成"
 
       - name: 缓存内核
@@ -612,6 +571,48 @@ jobs:
             ${{ env.SHARED_CACHE_KEY }}-kernel
           path: |
             ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/linux-*
+
+      - name: 恢复依赖包缓存
+        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-packages
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-packages
+          path: |
+            ${{ env.OPENWRT_PATH }}/staging_dir/target*
+            ${{ env.OPENWRT_PATH }}/staging_dir/host*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
+        continue-on-error: true
+
+      - name: 检查依赖包缓存
+        if: github.event.inputs.start_stage == 'base' || github.event.inputs.start_stage == 'ipk'
+        run: |
+          if [ ! -d "$OPENWRT_PATH/staging_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi" ]; then
+            echo "错误：依赖包缓存不存在，无法从${{ github.event.inputs.start_stage }}阶段开始编译"
+            exit 1
+          fi
+
+      - name: 编译依赖包
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
+        run: |
+          cd $OPENWRT_PATH
+          echo "开始编译依赖包..."
+          make download -j$(($(nproc) * 2))
+          make package/compile -j$(($(nproc) + 1)) || make package/compile -j1 V=s
+          echo "依赖包编译完成"
+
+      - name: 缓存依赖包
+        if: github.event.inputs.start_stage == 'toolchain' || github.event.inputs.start_stage == 'packages' || github.event.inputs.start_stage == 'kernel' || github.event.inputs.start_stage == 'full'
+        uses: actions/cache@v4
+        with:
+          key: ${{ env.SHARED_CACHE_KEY }}-packages
+          restore-keys: |
+            ${{ env.SHARED_CACHE_KEY }}-packages
+          path: |
+            ${{ env.OPENWRT_PATH }}/staging_dir/target*
+            ${{ env.OPENWRT_PATH }}/staging_dir/host*
+            ${{ env.OPENWRT_PATH }}/build_dir/target-arm_cortex-a53+neon-vfpv4_musl_eabi/package-*
 
       - name: 恢复基础系统缓存
         if: github.event.inputs.start_stage == 'ipk'
@@ -637,7 +638,6 @@ jobs:
         run: |
           cd $OPENWRT_PATH
           echo "开始编译基础系统..."
-          make target/linux/install -j$(($(nproc) + 1)) || make target/linux/install -j1 V=s
           make package/install -j$(($(nproc) + 1)) || make package/install -j1 V=s
           echo "基础系统编译完成"
 
@@ -805,4 +805,4 @@ jobs:
             
             ## 默认信息
             - WIFI密码: 12345678
-            - LAN地址: 192.168.1.1
+            - LAN地址: 192.168.111.1
