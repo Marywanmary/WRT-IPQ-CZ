@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# 添加语法验证（在脚本开头）
+bash -n "$0" && echo "✅ 语法检查通过" || { echo "❌ 语法错误，请检查脚本"; exit 1; }
+
 set -e
 set -o errexit
 set -o errtrace
@@ -12,7 +15,7 @@ error_handler() {
 # 设置trap捕获ERR信号
 trap 'error_handler' ERR
 
-BASE_PATH=$(cd $(dirname $0) && pwd)
+BASE_PATH=$(cd "$(dirname "$0")" && pwd)
 
 REPO_URL=$1
 REPO_BRANCH=$2
@@ -28,7 +31,7 @@ LAN_ADDR="192.168.1.1"
 clone_repo() {
     if [[ ! -d $BUILD_DIR ]]; then
         echo "克隆仓库: $REPO_URL 分支: $REPO_BRANCH"
-        if ! git clone --depth 1 -b $REPO_BRANCH $REPO_URL $BUILD_DIR; then
+        if ! git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$BUILD_DIR"; then
             echo "错误：克隆仓库 $REPO_URL 失败" >&2
             exit 1
         fi
@@ -36,26 +39,26 @@ clone_repo() {
 }
 
 clean_up() {
-    cd $BUILD_DIR
-    if [[ -f $BUILD_DIR/.config ]]; then
-        \rm -f $BUILD_DIR/.config
+    cd "$BUILD_DIR"
+    if [[ -f "$BUILD_DIR/.config" ]]; then
+        \rm -f "$BUILD_DIR/.config"
     fi
-    if [[ -d $BUILD_DIR/tmp ]]; then
-        \rm -rf $BUILD_DIR/tmp
+    if [[ -d "$BUILD_DIR/tmp" ]]; then
+        \rm -rf "$BUILD_DIR/tmp"
     fi
-    if [[ -d $BUILD_DIR/logs ]]; then
-        \rm -rf $BUILD_DIR/logs/*
+    if [[ -d "$BUILD_DIR/logs" ]]; then
+        \rm -rf "$BUILD_DIR/logs"/*
     fi
-    mkdir -p $BUILD_DIR/tmp
-    echo "1" >$BUILD_DIR/tmp/.build
+    mkdir -p "$BUILD_DIR/tmp"
+    echo "1" >"$BUILD_DIR/tmp/.build"
 }
 
 reset_feeds_conf() {
-    git reset --hard origin/$REPO_BRANCH
+    git reset --hard "origin/$REPO_BRANCH"
     git clean -f -d
     git pull
     if [[ $COMMIT_HASH != "none" ]]; then
-        git checkout $COMMIT_HASH
+        git checkout "$COMMIT_HASH"
     fi
 }
 
@@ -110,29 +113,29 @@ remove_unwanted_packages() {
     )
 
     for pkg in "${luci_packages[@]}"; do
-        if [[ -d ./feeds/luci/applications/$pkg ]]; then
-            \rm -rf ./feeds/luci/applications/$pkg
+        if [[ -d ./feeds/luci/applications/"$pkg" ]]; then
+            \rm -rf ./feeds/luci/applications/"$pkg"
         fi
-        if [[ -d ./feeds/luci/themes/$pkg ]]; then
-            \rm -rf ./feeds/luci/themes/$pkg
+        if [[ -d ./feeds/luci/themes/"$pkg" ]]; then
+            \rm -rf ./feeds/luci/themes/"$pkg"
         fi
     done
 
     for pkg in "${packages_net[@]}"; do
-        if [[ -d ./feeds/packages/net/$pkg ]]; then
-            \rm -rf ./feeds/packages/net/$pkg
+        if [[ -d ./feeds/packages/net/"$pkg" ]]; then
+            \rm -rf ./feeds/packages/net/"$pkg"
         fi
     done
 
     for pkg in "${packages_utils[@]}"; do
-        if [[ -d ./feeds/packages/utils/$pkg ]]; then
-            \rm -rf ./feeds/packages/utils/$pkg
+        if [[ -d ./feeds/packages/utils/"$pkg" ]]; then
+            \rm -rf ./feeds/packages/utils/"$pkg"
         fi
     done
 
     for pkg in "${small8_packages[@]}"; do
-        if [[ -d ./feeds/small8/$pkg ]]; then
-            \rm -rf ./feeds/small8/$pkg
+        if [[ -d ./feeds/small8/"$pkg" ]]; then
+            \rm -rf ./feeds/small8/"$pkg"
         fi
     done
 
@@ -155,7 +158,7 @@ update_golang() {
     if [[ -d ./feeds/packages/lang/golang ]]; then
         echo "正在更新 golang 软件包..."
         \rm -rf ./feeds/packages/lang/golang
-        if ! git clone --depth 1 -b $GOLANG_BRANCH $GOLANG_REPO ./feeds/packages/lang/golang; then
+        if ! git clone --depth 1 -b "$GOLANG_BRANCH" "$GOLANG_REPO" ./feeds/packages/lang/golang; then
             echo "错误：克隆 golang 仓库 $GOLANG_REPO 失败" >&2
             exit 1
         fi
@@ -175,24 +178,24 @@ install_small8() {
 }
 
 install_fullconenat() {
-    if [ ! -d $BUILD_DIR/package/network/utils/fullconenat-nft ]; then
+    if [ ! -d "$BUILD_DIR/package/network/utils/fullconenat-nft" ]; then
         ./scripts/feeds install -p small8 -f fullconenat-nft
     fi
-    if [ ! -d $BUILD_DIR/package/network/utils/fullconenat ]; then
+    if [ ! -d "$BUILD_DIR/package/network/utils/fullconenat" ]; then
         ./scripts/feeds install -p small8 -f fullconenat
     fi
 }
 
 install_feeds() {
     ./scripts/feeds update -i
-    for dir in $BUILD_DIR/feeds/*; do
+    for dir in "$BUILD_DIR"/feeds/*; do
         # 检查是否为目录并且不以 .tmp 结尾，并且不是软链接
         if [ -d "$dir" ] && [[ ! "$dir" == *.tmp ]] && [ ! -L "$dir" ]; then
             if [[ $(basename "$dir") == "small8" ]]; then
                 install_small8
                 install_fullconenat
             else
-                ./scripts/feeds install -f -ap $(basename "$dir")
+                ./scripts/feeds install -f -ap "$(basename "$dir")"
             fi
         fi
     done
@@ -224,15 +227,15 @@ fix_miniupnpd() {
 }
 
 change_dnsmasq2full() {
-    if ! grep -q "dnsmasq-full" $BUILD_DIR/include/target.mk; then
+    if ! grep -q "dnsmasq-full" "$BUILD_DIR/include/target.mk"; then
         sed -i 's/dnsmasq/dnsmasq-full/g' ./include/target.mk
     fi
 }
 
 fix_mk_def_depends() {
-    sed -i 's/libustream-mbedtls/libustream-openssl/g' $BUILD_DIR/include/target.mk 2>/dev/null
-    if [ -f $BUILD_DIR/target/linux/qualcommax/Makefile ]; then
-        sed -i 's/wpad-openssl/wpad-mesh-openssl/g' $BUILD_DIR/target/linux/qualcommax/Makefile
+    sed -i 's/libustream-mbedtls/libustream-openssl/g' "$BUILD_DIR/include/target.mk" 2>/dev/null
+    if [ -f "$BUILD_DIR/target/linux/qualcommax/Makefile" ]; then
+        sed -i 's/wpad-openssl/wpad-mesh-openssl/g' "$BUILD_DIR/target/linux/qualcommax/Makefile"
     fi
 }
 
@@ -249,8 +252,8 @@ add_wifi_default_set() {
 
 update_default_lan_addr() {
     local CFG_PATH="$BUILD_DIR/package/base-files/files/bin/config_generate"
-    if [ -f $CFG_PATH ]; then
-        sed -i 's/192\.168\.[0-9]*\.[0-9]*/'$LAN_ADDR'/g' $CFG_PATH
+    if [ -f "$CFG_PATH" ]; then
+        sed -i 's/192\.168\.[0-9]*\.[0-9]*/'"$LAN_ADDR"'/g' "$CFG_PATH"
     fi
 }
 
@@ -340,22 +343,22 @@ update_ath11k_fw() {
 
 fix_mkpkg_format_invalid() {
     if [[ $BUILD_DIR =~ "imm-nss" ]]; then
-        if [ -f $BUILD_DIR/feeds/small8/v2ray-geodata/Makefile ]; then
-            sed -i 's/VER)-\$(PKG_RELEASE)/VER)-r\$(PKG_RELEASE)/g' $BUILD_DIR/feeds/small8/v2ray-geodata/Makefile
+        if [ -f "$BUILD_DIR/feeds/small8/v2ray-geodata/Makefile" ]; then
+            sed -i 's/VER)-\$(PKG_RELEASE)/VER)-r\$(PKG_RELEASE)/g' "$BUILD_DIR/feeds/small8/v2ray-geodata/Makefile"
         fi
-        if [ -f $BUILD_DIR/feeds/small8/luci-lib-taskd/Makefile ]; then
-            sed -i 's/>=1\.0\.3-1/>=1\.0\.3-r1/g' $BUILD_DIR/feeds/small8/luci-lib-taskd/Makefile
+        if [ -f "$BUILD_DIR/feeds/small8/luci-lib-taskd/Makefile" ]; then
+            sed -i 's/>=1\.0\.3-1/>=1\.0\.3-r1/g' "$BUILD_DIR/feeds/small8/luci-lib-taskd/Makefile"
         fi
-        if [ -f $BUILD_DIR/feeds/small8/luci-app-openclash/Makefile ]; then
-            sed -i 's/PKG_RELEASE:=beta/PKG_RELEASE:=1/g' $BUILD_DIR/feeds/small8/luci-app-openclash/Makefile
+        if [ -f "$BUILD_DIR/feeds/small8/luci-app-openclash/Makefile" ]; then
+            sed -i 's/PKG_RELEASE:=beta/PKG_RELEASE:=1/g' "$BUILD_DIR/feeds/small8/luci-app-openclash/Makefile"
         fi
-        if [ -f $BUILD_DIR/feeds/small8/luci-app-quickstart/Makefile ]; then
-            sed -i 's/PKG_VERSION:=0\.8\.16-1/PKG_VERSION:=0\.8\.16/g' $BUILD_DIR/feeds/small8/luci-app-quickstart/Makefile
-            sed -i 's/PKG_RELEASE:=$/PKG_RELEASE:=1/g' $BUILD_DIR/feeds/small8/luci-app-quickstart/Makefile
+        if [ -f "$BUILD_DIR/feeds/small8/luci-app-quickstart/Makefile" ]; then
+            sed -i 's/PKG_VERSION:=0\.8\.16-1/PKG_VERSION:=0\.8\.16/g' "$BUILD_DIR/feeds/small8/luci-app-quickstart/Makefile"
+            sed -i 's/PKG_RELEASE:=$/PKG_RELEASE:=1/g' "$BUILD_DIR/feeds/small8/luci-app-quickstart/Makefile"
         fi
-        if [ -f $BUILD_DIR/feeds/small8/luci-app-store/Makefile ]; then
-            sed -i 's/PKG_VERSION:=0\.1\.27-1/PKG_VERSION:=0\.1\.27/g' $BUILD_DIR/feeds/small8/luci-app-store/Makefile
-            sed -i 's/PKG_RELEASE:=$/PKG_RELEASE:=1/g' $BUILD_DIR/feeds/small8/luci-app-store/Makefile
+        if [ -f "$BUILD_DIR/feeds/small8/luci-app-store/Makefile" ]; then
+            sed -i 's/PKG_VERSION:=0\.1\.27-1/PKG_VERSION:=0\.1\.27/g' "$BUILD_DIR/feeds/small8/luci-app-store/Makefile"
+            sed -i 's/PKG_RELEASE:=$/PKG_RELEASE:=1/g' "$BUILD_DIR/feeds/small8/luci-app-store/Makefile"
         fi
     fi
 }
@@ -480,25 +483,25 @@ EOF
 
         sed -i "/define Package\/default-settings\/install/a\\
 \\t\$(INSTALL_DIR) \$(1)/etc\\n\
-\t\$(INSTALL_DATA) ./files/99-distfeeds.conf \$(1)/etc/99-distfeeds.conf\n" $emortal_def_dir/Makefile
+\t\$(INSTALL_DATA) ./files/99-distfeeds.conf \$(1)/etc/99-distfeeds.conf\n" "$emortal_def_dir/Makefile"
 
         sed -i "/exit 0/i\\
 [ -f \'/etc/99-distfeeds.conf\' ] && mv \'/etc/99-distfeeds.conf\' \'/etc/opkg/distfeeds.conf\'\n\
-sed -ri \'/check_signature/s@^[^#]@#&@\' /etc/opkg.conf\n" $emortal_def_dir/files/99-default-settings
+sed -ri \'/check_signature/s@^[^#]@#&@\' /etc/opkg.conf\n" "$emortal_def_dir/files/99-default-settings"
     fi
 }
 
 update_nss_pbuf_performance() {
     local pbuf_path="$BUILD_DIR/package/kernel/mac80211/files/pbuf.uci"
-    if [ -d "$(dirname "$pbuf_path")" ] && [ -f $pbuf_path ]; then
-        sed -i "s/auto_scale '1'/auto_scale 'off'/g" $pbuf_path
-        sed -i "s/scaling_governor 'performance'/scaling_governor 'schedutil'/g" $pbuf_path
+    if [ -d "$(dirname "$pbuf_path")" ] && [ -f "$pbuf_path" ]; then
+        sed -i "s/auto_scale '1'/auto_scale 'off'/g" "$pbuf_path"
+        sed -i "s/scaling_governor 'performance'/scaling_governor 'schedutil'/g" "$pbuf_path"
     fi
 }
 
 set_build_signature() {
     local file="$BUILD_DIR/feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js"
-    if [ -d "$(dirname "$file")" ] && [ -f $file ]; then
+    if [ -d "$(dirname "$file")" ] && [ -f "$file" ]; then
         sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ build by ZqinKing')/g" "$file"
     fi
 }
@@ -617,7 +620,7 @@ update_package() {
 }
 
 # 添加系统升级时的备份信息
-function add_backup_info_to_sysupgrade() {
+add_backup_info_to_sysupgrade() {
     local conf_path="$BUILD_DIR/package/base-files/files/etc/sysupgrade.conf"
 
     if [ -f "$conf_path" ]; then
@@ -630,7 +633,7 @@ EOF
 }
 
 # 更新启动顺序
-function update_script_priority() {
+update_script_priority() {
     # 更新qca-nss驱动的启动顺序
     local qca_drv_path="$BUILD_DIR/package/feeds/nss_packages/qca-nss-drv/files/qca-nss-drv.init"
     if [ -d "${qca_drv_path%/*}" ] && [ -f "$qca_drv_path" ]; then
@@ -644,7 +647,7 @@ function update_script_priority() {
     fi
 
     # 更新mosdns服务的启动顺序
-    local mosdns_path="$BUILD_DIR/package/feeds/small8/luci-app-mosdns/root/etc/init.d/mosdns"
+    local mosdns_path="$BUILD_DIR/feeds/small8/luci-app-mosdns/root/etc/init.d/mosdns"
     if [ -d "${mosdns_path%/*}" ] && [ -f "$mosdns_path" ]; then
         sed -i 's/START=.*/START=94/g' "$mosdns_path"
     fi
@@ -652,7 +655,7 @@ function update_script_priority() {
 
 update_mosdns_deconfig() {
     local mosdns_conf="$BUILD_DIR/feeds/small8/luci-app-mosdns/root/etc/config/mosdns"
-    if [ -d "${mosdns_conf%/*}" ] && [ -f "$mosdns_conf" ]; then
+    if [ -f "$mosdns_conf" ]; then
         sed -i 's/8000/300/g' "$mosdns_conf"
         sed -i 's/5335/5336/g' "$mosdns_conf"
     fi
@@ -676,7 +679,7 @@ update_oaf_deconfig() {
     local uci_def="$BUILD_DIR/feeds/small8/luci-app-oaf/root/etc/uci-defaults/94_feature_3.0"
     local disable_path="$BUILD_DIR/feeds/small8/luci-app-oaf/root/etc/uci-defaults/99_disable_oaf"
 
-    if [ -d "${conf_path%/*}" ] && [ -f "$conf_path" ]; then
+    if [ -f "$conf_path" ]; then
         sed -i \
             -e "s/record_enable '1'/record_enable '0'/g" \
             -e "s/disable_hnat '1'/disable_hnat '0'/g" \
@@ -684,7 +687,7 @@ update_oaf_deconfig() {
             "$conf_path"
     fi
 
-    if [ -d "${uci_def%/*}" ] && [ -f "$uci_def" ]; then
+    if [ -f "$uci_def" ]; then
         sed -i '/\(disable_hnat\|auto_load_engine\)/d' "$uci_def"
 
         # 禁用脚本
@@ -735,16 +738,16 @@ add_gecoosac() {
 }
 
 fix_easytier() {
-    local easytier_path="$BUILD_DIR/package/feeds/small8/luci-app-easytier/luasrc/model/cbi/easytier.lua"
-    if [ -d "${easytier_path%/*}" ] && [ -f "$easytier_path" ]; then
+    local easytier_path="$BUILD_DIR/feeds/small8/luci-app-easytier/luasrc/model/cbi/easytier.lua"
+    if [ -f "$easytier_path" ]; then
         sed -i 's/util/xml/g' "$easytier_path"
     fi
 }
 
 update_geoip() {
     local geodata_path="$BUILD_DIR/package/feeds/small8/v2ray-geodata/Makefile"
-    if [ -d "${geodata_path%/*}" ] && [ -f "$geodata_path" ]; then
-        local GEOIP_VER=$(awk -F"=" '/GEOIP_VER:=/ {print $NF}' $geodata_path | grep -oE "[0-9]{1,}")
+    if [ -f "$geodata_path" ]; then
+        local GEOIP_VER=$(awk -F"=" '/GEOIP_VER:=/ {print $NF}' "$geodata_path" | grep -oE "[0-9]{1,}")
         if [ -n "$GEOIP_VER" ]; then
             local base_url="https://github.com/v2fly/geoip/releases/download/${GEOIP_VER}"
             # 下载旧的geoip.dat和新的geoip-only-cn-private.dat文件的校验和
@@ -772,7 +775,7 @@ update_geoip() {
 update_lucky() {
     # 从补丁文件名中提取版本号
     local version
-    version=$(find "$BASE_PATH/patches" -name "lucky_*.tar.gz" -printf "%f\n" | head -n 1 | sed -n 's/^lucky_\(.*\)_Linux.*$/\1/p')
+    version=$(find "$BASE_PATH/patches" -name "lucky_*.tar.gz" -printf "%f\n" | head -n 1 | sed -n 's/^lucky_\(.*\)_Linux.*$/\1/p' || true)
     if [ -z "$version" ]; then
         echo "Warning: 未找到 lucky 补丁文件，跳过更新。" >&2
         return 1
